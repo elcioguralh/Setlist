@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Setlist Palco</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<style>
+  :root{
+    --bg:#0a0a0a; --fg:#f2f0ea; --dim:#8a8880; --accent:#ffb100;
+    --line:#28251f; --card:#151310; --danger:#ff4d4d; --radius:10px;
+    --stage-fs:40px; --ui-fs:17px;
+  }
+  html[data-theme="mono"]{
+    --bg:#000000; --fg:#ffffff; --dim:#8f8f8f;
+    --accent:#ffffff; --line:#2a2a2a; --card:#0d0d0d; --danger:#ffffff;
+  }
+  html[data-theme="monolight"]{
+    --bg:#ffffff; --fg:#0a0a0a; --dim:#5c5c5c;
+    --accent:#000000; --line:#dcdcdc; --card:#f3f3f1; --danger:#000000;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%; margin:0; overscroll-behavior:none;}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    font-size:var(--ui-fs); line-height:1.4;
+    display:flex; flex-direction:column; height:100vh; height:100dvh;
+    user-select:none;
+  }
+  #topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px calc(10px + env(safe-area-inset-top)) 16px;
+    padding-top:calc(14px + env(safe-area-inset-top));
+    border-bottom:1px solid var(--line); flex-shrink:0; gap:8px;
+  }
+  #topbar h1{
+    font-size:19px; font-weight:800; letter-spacing:-0.02em; margin:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .btn{
+    background:none; border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:9px 13px; font-size:15px; font-weight:600;
+    cursor:pointer; font-family:inherit;
+  }
+  .btn:active{ background:var(--card); }
+  .btn.primary{ background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .btn.ghost{ border-color:transparent; padding:9px 8px; }
+  .btn.danger{ color:var(--danger); border-color:var(--danger); }
+  .topbtns{ display:flex; gap:6px; flex-shrink:0; }
+  #screen{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
+  .empty{ padding:40px 24px; color:var(--dim); text-align:center; }
+  .empty b{ color:var(--fg); display:block; margin-bottom:6px; font-size:17px; }
+
+  /* Lists */
+  .rowlist{ display:flex; flex-direction:column; }
+  .row{
+    display:flex; align-items:center; gap:12px;
+    padding:16px; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .row:active{ background:var(--card); }
+  .row .idx{ color:var(--dim); font-variant-numeric:tabular-nums; width:26px; flex-shrink:0; font-size:15px; }
+  .row .info{ flex:1; min-width:0; }
+  .row .info .t{ font-weight:700; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .info .a{ color:var(--dim); font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .row .meta{ color:var(--dim); font-size:13px; flex-shrink:0; text-align:right; }
+  .row .actions{ display:flex; gap:4px; flex-shrink:0; }
+  .row.selected{ background:var(--card); box-shadow:inset 3px 0 0 var(--accent); }
+
+  .fab-row{ display:flex; gap:8px; padding:16px; flex-wrap:wrap; }
+
+  /* Forms */
+  .form{ padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .field label{ display:block; font-size:13px; color:var(--dim); margin-bottom:6px; font-weight:600; }
+  .field input, .field textarea{
+    width:100%; background:var(--card); border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:11px 12px; font-size:16px; font-family:inherit;
+  }
+  .field textarea{ resize:vertical; min-height:56px; }
+  .field textarea.lyrics{ min-height:260px; font-size:15px; line-height:1.6; }
+  .field-row{ display:flex; gap:10px; }
+  .field-row .field{ flex:1; }
+  .hint{ color:var(--dim); font-size:13px; margin-top:-4px; }
+
+  /* Stage view */
+  #stageScreen{ display:flex; flex-direction:column; height:100%; }
+  .stagelist{ flex:1; overflow-y:auto; }
+  .stagerow{
+    padding:16px 20px; border-bottom:1px solid var(--line);
+    display:flex; flex-direction:column; gap:5px;
+  }
+  .stagerow .main{ display:flex; align-items:baseline; gap:14px; }
+  .stagerow .idx{ color:var(--dim); font-size:18px; width:30px; flex-shrink:0; }
+  .stagerow .t{ font-size:22px; font-weight:800; flex:1; }
+  .stagerow .a{ color:var(--dim); font-size:15px; }
+  .stagerow .tone{ color:var(--accent); font-weight:700; font-size:15px; flex-shrink:0; }
+  .stagerow .extra{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    padding-left:44px; font-size:14px; color:var(--dim);
+  }
+  .stagerow .extra .bpm{ flex-shrink:0; }
+  .stagerow .extra .notes{ color:var(--fg); opacity:0.85; }
+  .stagerow.current{ background:var(--card); box-shadow:inset 5px 0 0 var(--accent); }
+  .stagerow.current .t{ color:var(--accent); }
+
+  /* Lyrics view */
+  #lyricsScreen{ display:flex; flex-direction:column; height:100%; }
+  .lyrheader{ padding:10px 20px; border-bottom:1px solid var(--line); flex-shrink:0; }
+  .lyrheader .t{ font-weight:800; font-size:18px; }
+  .lyrheader .sub{ color:var(--dim); font-size:13px; margin-top:2px; }
+  .lyrbody{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    padding:20px 28px; text-align:center; position:relative;
+  }
+  .lyrbody .lines{ font-size:var(--stage-fs); font-weight:700; line-height:1.5; letter-spacing:-0.01em; }
+  .lyrbody .lines div{ margin:0.15em 0; }
+  .lyrbody .zone{ position:absolute; top:0; bottom:0; width:50%; }
+  .lyrbody .zone.left{ left:0; } .lyrbody .zone.right{ right:0; }
+  .lyrfooter{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 20px calc(10px + env(safe-area-inset-bottom)) 20px;
+    border-top:1px solid var(--line); flex-shrink:0; color:var(--dim); font-size:14px;
+  }
+  .dots{ display:flex; gap:5px; }
+  .dot{ width:6px; height:6px; border-radius:50%; background:var(--line); }
+  .dot.on{ background:var(--accent); }
+  .noLyrics{ color:var(--dim); font-size:20px; }
+
+  /* Modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex;
+    align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .sheet{
+    background:var(--bg); border:1px solid var(--line); border-radius:16px 16px 0 0;
+    width:100%; max-width:520px; max-height:85vh; overflow-y:auto;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom)) 16px;
+  }
+  .sheet h2{ margin:0 0 14px 0; font-size:18px; }
+  .sheet-row{ display:flex; align-items:center; justify-content:space-between; padding:12px 4px; border-bottom:1px solid var(--line); }
+  .sheet-row:last-child{ border-bottom:none; }
+  .stepper{ display:flex; align-items:center; gap:10px; }
+  .stepper button{ width:34px; height:34px; border-radius:8px; }
+  .kbd{ display:inline-block; background:var(--card); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px; font-family:monospace; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div class="topbtns" id="leftBtns"></div>
+  <h1 id="title">Setlist Palco</h1>
+  <div class="topbtns" id="rightBtns"></div>
+</div>
+<main id="screen"></main>
+
+<script>
+/* ---------------- DATA LAYER ---------------- */
+const DB_KEY = 'setlistpalco_db_v1';
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+function defaultDB(){
+  return { setlists: [], songs: {}, settings: { theme:'dark', linesPerPage:3, fontSize:'md' }, activeSetlistId:null };
+}
+let db = loadDB();
+function loadDB(){
+  try{
+    const raw = localStorage.getItem(DB_KEY);
+    if(!raw) return defaultDB();
+    const parsed = JSON.parse(raw);
+    return Object.assign(defaultDB(), parsed);
+  }catch(e){ return defaultDB(); }
+}
+function saveDB(){ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+const FS_MAP = { sm:'30px', md:'40px', lg:'52px', xl:'66px' };
+
+/* ---------------- STATE / NAV ---------------- */
+let state = { view:'setlists', setlistId:null, editingSongId:null, stageIndex:0, lyricsChunk:0 };
+
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---------------- RENDER ROOT ---------------- */
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme', db.settings.theme==='dark' ? '' : db.settings.theme);
+  document.documentElement.style.setProperty('--stage-fs', FS_MAP[db.settings.fontSize]||'40px');
+}
+
+function render(){
+  applyTheme();
+  const left = document.getElementById('leftBtns');
+  const right = document.getElementById('rightBtns');
+  const title = document.getElementById('title');
+  left.innerHTML=''; right.innerHTML='';
+
+  const settingsBtn = `<button class="btn ghost" onclick="openSettings()" aria-label="Ajustes">⚙</button>`;
+
+  if(state.view==='setlists'){
+    title.textContent='Meus Setlists';
+    right.innerHTML = settingsBtn;
+    renderSetlists();
+  } else if(state.view==='setlist'){
+    const sl = db.setlists.find(s=>s.id===state.setlistId);
+    title.textContent = sl ? sl.name : 'Setlist';
+    left.innerHTML = `<button class="btn ghost" onclick="goTo('setlists')">← Voltar</button>`;
+    right.innerHTML = (sl && sl.songs.length ? `<button class="btn primary" onclick="enterStage(0)">▶ Palco</button>` : '') + settingsBtn;
+    renderSetlist(sl);
+  } else if(state.view==='songEdit'){
+    title.textContent = state.editingSongId ? 'Editar música' : 'Nova música';
+    left.innerHTML = `<button class="btn ghost" onclick="goTo('setlist')">Cancelar</button>`;
+    right.innerHTML = `<button class="btn primary" onclick="saveSongForm()">Salvar</button>`;
+    renderSongEdit();
+  } else if(state.view==='paste'){
+    title.textContent='Colar músicas';
+    left.innerHTML = `<button class="btn ghost" onclick="goTo('setlist')">Cancelar</button>`;
+    right.innerHTML = `<button class="btn primary" onclick="processPaste()">Adicionar</button>`;
+    renderPaste();
+  } else if(state.view==='stage'){
+    const sl = db.setlists.find(s=>s.id===state.setlistId);
+    title.textContent = sl ? sl.name : '';
+    left.innerHTML = `<button class="btn ghost" onclick="goTo('setlist')">← Sair</button>`;
+    right.innerHTML = settingsBtn;
+    renderStage(sl);
+  } else if(state.view==='lyrics'){
+    renderLyrics();
+    title.textContent='';
+    left.innerHTML = `<button class="btn ghost" onclick="exitLyrics()">← Palco</button>`;
+    right.innerHTML = settingsBtn;
+  }
+}
+
+function goTo(view){ state.view=view; render(); }
+
+/* ---------------- SETLISTS SCREEN ---------------- */
+function renderSetlists(){
+  const el = document.getElementById('screen');
+  if(db.setlists.length===0){
+    el.innerHTML = `<div class="empty"><b>Nenhum setlist ainda</b>Crie um setlist para o seu show.</div>
+    <div class="fab-row"><button class="btn primary" onclick="createSetlist()">+ Novo setlist</button></div>`;
+    return;
+  }
+  let html = `<div class="fab-row"><button class="btn primary" onclick="createSetlist()">+ Novo setlist</button></div><div class="rowlist">`;
+  db.setlists.forEach(sl=>{
+    html += `<div class="row" onclick="openSetlist('${sl.id}')">
+      <div class="info"><div class="t">${esc(sl.name)}</div><div class="a">${sl.songs.length} música${sl.songs.length!==1?'s':''}</div></div>
+      <div class="actions">
+        <button class="btn ghost" onclick="event.stopPropagation(); duplicateSetlist('${sl.id}')" aria-label="Duplicar">⧉</button>
+        <button class="btn ghost" onclick="event.stopPropagation(); renameSetlist('${sl.id}')">✎</button>
+        <button class="btn ghost" onclick="event.stopPropagation(); deleteSetlist('${sl.id}')">🗑</button>
+      </div></div>`;
+  });
+  html += `</div>`;
+  el.innerHTML = html;
+}
+function createSetlist(){
+  const name = prompt('Nome do setlist (ex: Show Bar do Zé - 20/09):');
+  if(!name) return;
+  const sl = { id:uid(), name:name.trim(), songs:[] };
+  db.setlists.push(sl); saveDB();
+  openSetlist(sl.id);
+}
+function renameSetlist(id){
+  const sl = db.setlists.find(s=>s.id===id); if(!sl) return;
+  const name = prompt('Novo nome:', sl.name);
+  if(!name) return;
+  sl.name = name.trim(); saveDB(); render();
+}
+function duplicateSetlist(id){
+  const sl = db.setlists.find(s=>s.id===id); if(!sl) return;
+  const suggested = sl.name + ' (cópia)';
+  const name = prompt('Nome do novo setlist:', suggested);
+  if(!name) return;
+  const copy = { id:uid(), name:name.trim(), songs:[...sl.songs] };
+  db.setlists.push(copy); saveDB();
+  openSetlist(copy.id);
+}
+function deleteSetlist(id){
+  if(!confirm('Excluir este setlist? As músicas cadastradas continuam salvas na biblioteca.')) return;
+  db.setlists = db.setlists.filter(s=>s.id!==id); saveDB(); render();
+}
+function openSetlist(id){ state.setlistId=id; goTo('setlist'); }
+
+/* ---------------- SETLIST (SONG LIST) SCREEN ---------------- */
+function renderSetlist(sl){
+  const el = document.getElementById('screen');
+  if(!sl){ el.innerHTML=`<div class="empty">Setlist não encontrado.</div>`; return; }
+  let html = `<div class="fab-row">
+    <button class="btn" onclick="editSong(null)">+ Adicionar música</button>
+    <button class="btn" onclick="goTo('paste')">+ Colar do Spotify</button>
+    <button class="btn" onclick="duplicateSetlist('${sl.id}')">⧉ Duplicar setlist</button>
+  </div>`;
+  if(sl.songs.length===0){
+    html += `<div class="empty"><b>Setlist vazio</b>Adicione músicas manualmente ou cole uma lista copiada do Spotify.</div>`;
+  } else {
+    html += `<div class="rowlist">`;
+    sl.songs.forEach((songId, i)=>{
+      const s = db.songs[songId]; if(!s) return;
+      html += `<div class="row" onclick="editSong('${s.id}')">
+        <div class="idx">${i+1}</div>
+        <div class="info"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist||'')}</div></div>
+        <div class="meta">${s.tone?esc(s.tone):''}${s.bpm?' · '+esc(s.bpm)+' bpm':''}</div>
+        <div class="actions">
+          <button class="btn ghost" onclick="event.stopPropagation(); moveSong('${sl.id}',${i},-1)">↑</button>
+          <button class="btn ghost" onclick="event.stopPropagation(); moveSong('${sl.id}',${i},1)">↓</button>
+          <button class="btn ghost" onclick="event.stopPropagation(); removeFromSetlist('${sl.id}',${i})">✕</button>
+        </div></div>`;
+    });
+    html += `</div>`;
+  }
+  el.innerHTML = html;
+}
+function moveSong(slId, i, dir){
+  const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
+  const j = i+dir; if(j<0||j>=sl.songs.length) return;
+  [sl.songs[i], sl.songs[j]] = [sl.songs[j], sl.songs[i]];
+  saveDB(); render();
+}
+function removeFromSetlist(slId, i){
+  const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
+  sl.songs.splice(i,1); saveDB(); render();
+}
+
+/* ---------------- SONG EDIT SCREEN ---------------- */
+function editSong(songId){
+  state.editingSongId = songId;
+  goTo('songEdit');
+}
+function renderSongEdit(){
+  const s = state.editingSongId ? db.songs[state.editingSongId] : { title:'', artist:'', tone:'', bpm:'', notes:'', lyrics:'' };
+  const el = document.getElementById('screen');
+  el.innerHTML = `<div class="form">
+    <div class="field"><label>Título *</label><input id="f_title" value="${esc(s.title)}" placeholder="Nome da música"></div>
+    <div class="field"><label>Artista</label><input id="f_artist" value="${esc(s.artist)}" placeholder="Artista / banda"></div>
+    <div class="field-row">
+      <div class="field"><label>Tom</label><input id="f_tone" value="${esc(s.tone)}" placeholder="Ex: G, Am, D#"></div>
+      <div class="field"><label>BPM</label><input id="f_bpm" value="${esc(s.bpm)}" placeholder="Ex: 96" inputmode="numeric"></div>
+    </div>
+    <div class="field"><label>Notas do show</label><textarea id="f_notes" placeholder="Ex: entrar direto sem intro, trocar afinação...">${esc(s.notes)}</textarea></div>
+    <div class="field"><label>Letra</label><textarea class="lyrics" id="f_lyrics" placeholder="Cole ou digite a letra aqui, uma linha por verso...">${esc(s.lyrics)}</textarea></div>
+    ${state.editingSongId ? `<button class="btn danger" onclick="deleteSongFromLibrary()">Excluir música</button>` : ''}
+  </div>`;
+}
+function saveSongForm(){
+  const title = document.getElementById('f_title').value.trim();
+  if(!title){ alert('Digite o título da música.'); return; }
+  const data = {
+    title,
+    artist: document.getElementById('f_artist').value.trim(),
+    tone: document.getElementById('f_tone').value.trim(),
+    bpm: document.getElementById('f_bpm').value.trim(),
+    notes: document.getElementById('f_notes').value.trim(),
+    lyrics: document.getElementById('f_lyrics').value
+  };
+  let id = state.editingSongId;
+  if(id){ db.songs[id] = Object.assign(db.songs[id], data); }
+  else {
+    id = uid();
+    db.songs[id] = Object.assign({id}, data);
+    const sl = db.setlists.find(s=>s.id===state.setlistId);
+    if(sl) sl.songs.push(id);
+  }
+  saveDB();
+  goTo('setlist');
+}
+function deleteSongFromLibrary(){
+  if(!confirm('Excluir esta música da biblioteca? Ela será removida de todos os setlists.')) return;
+  const id = state.editingSongId;
+  delete db.songs[id];
+  db.setlists.forEach(sl=>{ sl.songs = sl.songs.filter(sid=>sid!==id); });
+  saveDB();
+  goTo('setlist');
+}
+
+/* ---------------- PASTE FROM SPOTIFY ---------------- */
+function renderPaste(){
+  document.getElementById('screen').innerHTML = `<div class="form">
+    <div class="field">
+      <label>Cole aqui a lista copiada do Spotify (ou qualquer lista de músicas, uma por linha)</label>
+      <textarea id="pasteBox" class="lyrics" placeholder="No Spotify: selecione as músicas da playlist, clique com o botão direito &gt; Copiar. Depois cole aqui."></textarea>
+    </div>
+    <div class="hint">Cada linha vira uma música. Se a linha tiver "Título - Artista" ou vier separada por tabulação (como o Spotify copia), o app separa título e artista automaticamente.</div>
+  </div>`;
+}
+function processPaste(){
+  const raw = document.getElementById('pasteBox').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  if(lines.length===0){ alert('Cole ao menos uma linha.'); return; }
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  let added = 0;
+  lines.forEach(line=>{
+    // skip obvious header rows from spotify copy (e.g. "#", "Title", "Album")
+    if(/^#?\s*(title|título|artista|album|álbum|duration|duração)\s*$/i.test(line)) return;
+    let title, artist='';
+    if(line.includes('\t')){
+      const parts = line.split('\t').map(p=>p.trim()).filter(Boolean);
+      title = parts[0]; artist = parts[1] || '';
+    } else if(line.includes(' - ')){
+      const idx = line.indexOf(' - ');
+      title = line.slice(0, idx).trim();
+      artist = line.slice(idx+3).trim();
+    } else if(line.includes(' – ')){
+      const idx = line.indexOf(' – ');
+      title = line.slice(0, idx).trim();
+      artist = line.slice(idx+3).trim();
+    } else {
+      title = line;
+    }
+    if(!title) return;
+    const id = uid();
+    db.songs[id] = { id, title, artist, tone:'', bpm:'', notes:'', lyrics:'' };
+    sl.songs.push(id);
+    added++;
+  });
+  saveDB();
+  goTo('setlist');
+  setTimeout(()=>{ if(added) alert(added+' música(s) adicionada(s). Abra cada uma para colar a letra, se quiser.'); }, 50);
+}
+
+/* ---------------- STAGE VIEW ---------------- */
+function enterStage(index){
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  if(!sl || sl.songs.length===0) return;
+  state.stageIndex = Math.max(0, Math.min(index, sl.songs.length-1));
+  goTo('stage');
+}
+function renderStage(sl){
+  const el = document.getElementById('screen');
+  if(!sl || sl.songs.length===0){ el.innerHTML=`<div class="empty">Setlist vazio.</div>`; return; }
+  let html = `<div id="stageScreen"><div class="stagelist" id="stagelist">`;
+  sl.songs.forEach((songId,i)=>{
+    const s = db.songs[songId]; if(!s) return;
+    const hasExtra = s.bpm || s.notes;
+    html += `<div class="stagerow ${i===state.stageIndex?'current':''}" data-i="${i}" onclick="stageRowClick(${i})">
+      <div class="main">
+        <div class="idx">${i+1}</div>
+        <div class="t">${esc(s.title)}</div>
+        <div class="a">${esc(s.artist||'')}</div>
+        <div class="tone">${s.tone?esc(s.tone):''}</div>
+      </div>
+      ${hasExtra ? `<div class="extra">
+        ${s.bpm?`<span class="bpm">${esc(s.bpm)} bpm</span>`:''}
+        ${s.notes?`<span class="notes">${esc(s.notes)}</span>`:''}
+      </div>` : ''}
+    </div>`;
+  });
+  html += `</div></div>`;
+  el.innerHTML = html;
+  const row = el.querySelector('.stagerow.current');
+  if(row) row.scrollIntoView({block:'center'});
+}
+function stageRowClick(i){
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  if(i===state.stageIndex){ enterLyrics(); return; }
+  state.stageIndex=i; render();
+}
+function stageMove(dir){
+  const sl = db.setlists.find(s=>s.id===state.setlistId); if(!sl) return;
+  const n = sl.songs.length;
+  state.stageIndex = ((state.stageIndex+dir)%n+n)%n;
+  render();
+}
+
+/* ---------------- LYRICS VIEW ---------------- */
+function enterLyrics(){ state.lyricsChunk=0; goTo('lyrics'); }
+function exitLyrics(){ goTo('stage'); }
+function currentSong(){
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  if(!sl) return null;
+  return db.songs[sl.songs[state.stageIndex]];
+}
+function lyricsChunks(song){
+  const perPage = db.settings.linesPerPage || 3;
+  const lines = (song.lyrics||'').split('\n').map(l=>l.trim());
+  // collapse multiple trailing blank lines but keep intentional blank lines inside
+  while(lines.length && lines[lines.length-1]==='') lines.pop();
+  if(lines.length===0) return [];
+  const chunks = [];
+  for(let i=0;i<lines.length;i+=perPage) chunks.push(lines.slice(i,i+perPage));
+  return chunks;
+}
+function renderLyrics(){
+  const song = currentSong();
+  const el = document.getElementById('screen');
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  if(!song){ el.innerHTML=`<div class="empty">Música não encontrada.</div>`; return; }
+  const chunks = lyricsChunks(song);
+  state.lyricsChunk = Math.max(0, Math.min(state.lyricsChunk, Math.max(chunks.length-1,0)));
+  const posLabel = `${state.stageIndex+1}/${sl.songs.length}`;
+
+  let body;
+  if(chunks.length===0){
+    body = `<div class="noLyrics">Sem letra cadastrada para esta música.${song.notes?`<br><br><span style="font-size:16px">${esc(song.notes)}</span>`:''}</div>`;
+  } else {
+    const c = chunks[state.lyricsChunk];
+    body = `<div class="lines">${c.map(l=>`<div>${esc(l)||'&nbsp;'}</div>`).join('')}</div>`;
+  }
+
+  let dots = '';
+  if(chunks.length>1){
+    dots = `<div class="dots">` + chunks.map((_,i)=>`<div class="dot ${i===state.lyricsChunk?'on':''}"></div>`).join('') + `</div>`;
+  } else { dots = `<div></div>`; }
+
+  el.innerHTML = `<div id="lyricsScreen">
+    <div class="lyrheader">
+      <div class="t">${esc(song.title)}</div>
+      <div class="sub">${esc(song.artist||'')}${song.tone?' · Tom '+esc(song.tone):''}${song.bpm?' · '+esc(song.bpm)+' bpm':''} · Faixa ${posLabel}</div>
+    </div>
+    <div class="lyrbody" id="lyrbody">
+      ${body}
+      <div class="zone left" onclick="lyricsPrev()"></div>
+      <div class="zone right" onclick="lyricsNext()"></div>
+    </div>
+    <div class="lyrfooter">
+      <span>${chunks.length ? (state.lyricsChunk+1)+' / '+chunks.length : ''}</span>
+      ${dots}
+      <span>${state.stageIndex>0?'◀ '+esc(truncate(prevTitle(),14)):''}</span>
+    </div>
+  </div>`;
+}
+function truncate(s,n){ if(!s) return ''; return s.length>n? s.slice(0,n)+'…' : s; }
+function prevTitle(){
+  const sl = db.setlists.find(s=>s.id===state.setlistId);
+  if(!sl || state.stageIndex<=0) return '';
+  const s = db.songs[sl.songs[state.stageIndex-1]];
+  return s ? s.title : '';
+}
+function lyricsNext(){
+  const song = currentSong(); if(!song) return;
+  const chunks = lyricsChunks(song);
+  if(state.lyricsChunk < chunks.length-1){ state.lyricsChunk++; render(); }
+  else { // go to next song's lyrics
+    const sl = db.setlists.find(s=>s.id===state.setlistId);
+    if(state.stageIndex < sl.songs.length-1){ state.stageIndex++; state.lyricsChunk=0; render(); }
+  }
+}
+function lyricsPrev(){
+  if(state.lyricsChunk > 0){ state.lyricsChunk--; render(); }
+  else {
+    const sl = db.setlists.find(s=>s.id===state.setlistId);
+    if(state.stageIndex > 0){
+      state.stageIndex--;
+      const song = currentSong();
+      const chunks = lyricsChunks(song);
+      state.lyricsChunk = Math.max(0, chunks.length-1);
+      render();
+    }
+  }
+}
+
+/* ---------------- SETTINGS SHEET ---------------- */
+function openSettings(){
+  const themeLabels = {dark:'Escuro', mono:'Monocromático (preto/branco)', monolight:'Monocromático claro'};
+  const fsLabels = {sm:'Pequena', md:'Média', lg:'Grande', xl:'Extra grande'};
+  const html = `<div class="overlay" onclick="if(event.target===this) closeSettings()">
+    <div class="sheet">
+      <h2>Ajustes</h2>
+      <div class="sheet-row"><span>Tema</span>
+        <button class="btn" onclick="cycleTheme()">${themeLabels[db.settings.theme]}</button>
+      </div>
+      <div class="sheet-row"><span>Linhas por tela (letra)</span>
+        <div class="stepper">
+          <button class="btn" onclick="changeLines(-1)">−</button>
+          <b>${db.settings.linesPerPage}</b>
+          <button class="btn" onclick="changeLines(1)">+</button>
+        </div>
+      </div>
+      <div class="sheet-row"><span>Tamanho da letra</span>
+        <div class="stepper">
+          <button class="btn" onclick="changeFontSize(-1)">A−</button>
+          <span>${fsLabels[db.settings.fontSize]}</span>
+          <button class="btn" onclick="changeFontSize(1)">A+</button>
+        </div>
+      </div>
+      <div class="sheet-row"><span>Backup</span>
+        <div class="stepper">
+          <button class="btn" onclick="exportData()">Exportar</button>
+          <button class="btn" onclick="document.getElementById('importFile').click()">Importar</button>
+        </div>
+      </div>
+      <div class="sheet-row" style="flex-direction:column; align-items:flex-start; gap:6px;">
+        <span style="font-weight:600;">Controles (teclado / pedal Bluetooth)</span>
+        <div class="hint" style="margin:0;">
+          <span class="kbd">↓</span> <span class="kbd">→</span> <span class="kbd">Page Down</span> — próximo &nbsp;
+          <span class="kbd">↑</span> <span class="kbd">←</span> <span class="kbd">Page Up</span> — anterior<br><br>
+          <span class="kbd">Enter</span> <span class="kbd">Espaço</span> — abrir letra / avançar trecho<br><br>
+          <span class="kbd">Esc</span> <span class="kbd">Backspace</span> — voltar
+        </div>
+      </div>
+      <div style="padding-top:10px;"><button class="btn" style="width:100%" onclick="closeSettings()">Fechar</button></div>
+    </div>
+  </div>
+  <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(event)">`;
+  const wrap = document.createElement('div');
+  wrap.id='settingsOverlay';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+}
+function closeSettings(){ const el = document.getElementById('settingsOverlay'); if(el) el.remove(); }
+function cycleTheme(){
+  const order = ['dark','mono','monolight'];
+  const i = order.indexOf(db.settings.theme);
+  db.settings.theme = order[(i+1)%order.length];
+  saveDB(); applyTheme(); closeSettings(); openSettings();
+}
+function changeLines(d){
+  db.settings.linesPerPage = Math.max(1, Math.min(8, db.settings.linesPerPage+d));
+  saveDB(); state.lyricsChunk=0; closeSettings(); openSettings();
+}
+function changeFontSize(d){
+  const order = ['sm','md','lg','xl'];
+  let i = order.indexOf(db.settings.fontSize);
+  i = Math.max(0, Math.min(order.length-1, i+d));
+  db.settings.fontSize = order[i];
+  saveDB(); applyTheme(); closeSettings(); openSettings();
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(db,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'setlist-backup.json';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function importData(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const incoming = JSON.parse(reader.result);
+      if(!confirm('Importar irá SUBSTITUIR todos os dados atuais. Continuar?')) return;
+      db = Object.assign(defaultDB(), incoming);
+      saveDB(); closeSettings(); goTo('setlists');
+    }catch(e){ alert('Arquivo inválido.'); }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------------- KEYBOARD / PEDAL CONTROLS ---------------- */
+window.addEventListener('keydown', (e)=>{
+  // ignore when typing in a form field
+  const tag = (e.target.tagName||'').toLowerCase();
+  if(tag==='input' || tag==='textarea') return;
+  if(document.getElementById('settingsOverlay')) return;
+
+  const NEXT = ['ArrowDown','ArrowRight','PageDown'];
+  const PREV = ['ArrowUp','ArrowLeft','PageUp'];
+  const SELECT = ['Enter',' '];
+  const BACK = ['Escape','Backspace'];
+
+  if(state.view==='stage'){
+    if(NEXT.includes(e.key)){ e.preventDefault(); stageMove(1); }
+    else if(PREV.includes(e.key)){ e.preventDefault(); stageMove(-1); }
+    else if(SELECT.includes(e.key)){ e.preventDefault(); enterLyrics(); }
+    else if(BACK.includes(e.key)){ e.preventDefault(); goTo('setlist'); }
+  } else if(state.view==='lyrics'){
+    if(NEXT.includes(e.key) || e.key===' '){ e.preventDefault(); lyricsNext(); }
+    else if(PREV.includes(e.key)){ e.preventDefault(); lyricsPrev(); }
+    else if(e.key==='Enter'){ e.preventDefault(); lyricsNext(); }
+    else if(BACK.includes(e.key)){ e.preventDefault(); exitLyrics(); }
+  } else if(state.view==='setlist'){
+    if(BACK.includes(e.key)){ goTo('setlists'); }
+  } else if(state.view==='setlists'){
+    // no-op
+  }
+});
+
+/* ---------------- SERVICE WORKER (offline install) ---------------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+/* ---------------- INIT ---------------- */
+render();
+</script>
+</body>
+</html>
