@@ -141,19 +141,19 @@
   .lyrbody .zone{ position:absolute; top:0; bottom:0; width:50%; }
   .lyrbody .zone.left{ left:0; } .lyrbody .zone.right{ right:0; }
   .lyrfooter{
-    display:flex; flex-direction:column; gap:3px;
-    padding:4px 16px calc(4px + env(safe-area-inset-bottom)) 16px;
-    border-top:1px solid var(--line); flex-shrink:0; color:var(--dim); font-size:12px;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:3px 16px calc(3px + env(safe-area-inset-bottom)) 16px;
+    border-top:1px solid var(--line); flex-shrink:0; color:var(--dim); font-size:11px;
   }
-  .lyrfooter-row{ display:flex; align-items:center; justify-content:space-between; width:100%; }
-  .dots{ display:flex; gap:5px; }
-  .dot{ width:6px; height:6px; border-radius:50%; background:var(--line); }
+  .lyrfooter-left{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .dots{ display:flex; gap:4px; }
+  .dot{ width:5px; height:5px; border-radius:50%; background:var(--line); }
   .dot.on{ background:var(--accent); }
   .nextup{
-    font-size:15px; font-weight:800; color:var(--accent); text-align:center;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:14px; font-weight:800; color:var(--accent); text-align:right;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1;
   }
-  .nextup.dim{ color:var(--dim); font-weight:600; font-size:12px; }
+  .nextup.dim{ color:var(--dim); font-weight:600; font-size:11px; }
   .noLyrics{ color:var(--dim); font-size:20px; text-align:center; }
 
   /* Modal */
@@ -187,8 +187,8 @@
     .lyrheader .t{ font-size:13px; }
     .lyrheader .sub{ font-size:10px; }
     .lyrbody{ padding:4px 20px; }
-    .lyrfooter{ padding:3px 16px; }
-    .nextup{ font-size:13px; }
+    .lyrfooter{ padding:2px 16px; }
+    .nextup{ font-size:12px; }
     .lyrbody .lines{ line-height:1.2; }
   }
   /* Responsive: wide screens (tablet / PC) */
@@ -672,7 +672,7 @@ function renderLyrics(){
     </div>` : '';
 
   const nt = nextTitle();
-  const footerNext = nt ? `<div class="nextup">&gt;&gt; ${esc(nt)}</div>` : `<div class="nextup dim">Última música do setlist</div>`;
+  const footerNext = nt ? `<div class="nextup">&gt;&gt; ${esc(nt)}</div>` : `<div class="nextup dim">Última música</div>`;
 
   el.innerHTML = `<div id="lyricsScreen">
     <div class="lyrheader">
@@ -691,7 +691,7 @@ function renderLyrics(){
       <div class="zone right" onclick="lyricsNext()"></div>
     </div>
     <div class="lyrfooter">
-      <div class="lyrfooter-row">
+      <div class="lyrfooter-left">
         <span>${chunks.length ? (state.lyricsChunk+1)+' / '+chunks.length : ''}</span>
         ${dots}
       </div>
