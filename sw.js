@@ -1,4 +1,4 @@
-const CACHE = 'setlist-palco-v3';
+const CACHE = 'setlist-palco-v4';
 const FILES = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e)=>{
@@ -15,6 +15,15 @@ self.addEventListener('activate', (e)=>{
 
 self.addEventListener('fetch', (e)=>{
   const req = e.request;
+
+  // Never intercept calls to the GitHub API (used for sync) — always hit the
+  // network directly so sync checks see the real current state, never a
+  // cached/stale API response. Also skip caching for non-GET requests
+  // (PUT/POST aren't valid Cache API entries anyway).
+  if(req.url.startsWith('https://api.github.com') || req.method !== 'GET'){
+    return; // let the browser handle it normally, no respondWith = no interception
+  }
+
   const isAppShell = req.mode === 'navigate' || req.url.endsWith('index.html') || req.url.endsWith('/');
 
   if(isAppShell){

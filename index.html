@@ -54,6 +54,7 @@
   .btn.danger{ color:var(--danger); border-color:var(--danger); }
   .btn.small{ padding:5px 9px; font-size:12px; }
   .btn.active{ background:var(--accent); color:var(--bg); border-color:var(--accent); }
+  .fontBtn{ font-weight:800; min-width:36px; }
   .topbtns{ display:flex; gap:6px; flex-shrink:0; }
   #screen{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
   .empty{ padding:40px 24px calc(40px + env(safe-area-inset-bottom)) 24px; color:var(--dim); text-align:center; }
@@ -150,7 +151,7 @@
   .dot{ width:4px; height:4px; border-radius:50%; background:var(--line); }
   .dot.on{ background:var(--accent); }
   .nextup{
-    font-size:12px; font-weight:800; color:var(--accent); text-align:right;
+    font-size:18px; font-weight:800; color:var(--accent); text-align:right;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1;
   }
   .nextup.dim{ color:var(--dim); font-weight:600; font-size:10px; }
@@ -176,6 +177,9 @@
   .kbd{ display:inline-block; background:var(--card); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px; font-family:monospace; }
   .backupBtns{ display:flex; gap:8px; flex-wrap:wrap; }
   .backupBtns .btn{ flex:1; min-width:130px; }
+  .syncBannerBox{ background:var(--card); border-bottom:1px solid var(--accent); padding:10px 16px; font-size:13px; display:flex; flex-direction:column; gap:8px; }
+  .syncBannerBox .row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .syncBannerBox .row .btn{ flex:1; min-width:110px; }
 
   /* Responsive: landscape / very short viewports */
   @media (orientation:landscape) and (max-height:480px){
@@ -188,7 +192,7 @@
     .lyrheader .sub{ font-size:10px; }
     .lyrbody{ padding:4px 20px; }
     .lyrfooter{ padding:1px 16px; }
-    .nextup{ font-size:11px; }
+    .nextup{ font-size:16px; }
     .lyrbody .lines{ line-height:1.2; }
   }
   /* Responsive: wide screens (tablet / PC) */
@@ -206,6 +210,7 @@
   <h1 id="title">Setlist Palco</h1>
   <div class="topbtns" id="rightBtns"></div>
 </div>
+<div id="syncBanner"></div>
 <main id="screen"></main>
 
 <script>
@@ -239,7 +244,216 @@ function loadDB(){
 }
 function saveDB(){ localStorage.setItem(DB_KEY, JSON.stringify(db)); }
 
-function blankSong(){ return { title:'', artist:'', tone:'', bpm:'', notes:'', lyrics:'', cifra:'', align:'' }; }
+/* ---------------- SYNC (GitHub, opt-in, per device) ----------------
+   Design goals:
+   - Never blocks or risks the offline/on-stage experience: every network call
+     is wrapped so a failure (no internet, GitHub down, bad token) just gets
+     skipped silently in the background (auto mode) — the app keeps working
+     off local data exactly as before.
+   - Only setlists+songs are synced (not display preferences like theme/font,
+     which can reasonably differ per device).
+   - "Safe" pulls/pushes (only one side changed since the last sync) happen
+     automatically. If BOTH sides changed, nothing is auto-applied — a banner
+     asks the person to choose, so nothing is silently overwritten.
+   - Never auto-applies a remote update while on the Stage or Lyrics screen,
+     so a background sync can't change what's on screen mid-performance; it's
+     queued and applied only once the person navigates back out.
+*/
+const SYNC_META_KEY = 'setlistpalco_sync_meta_v1';
+function defaultSyncMeta(){
+  return { token:'', repo:'', path:'setlist-data.json', lastSyncedAt:0, lastLocalChangeAt:0, remoteSha:'' };
+}
+function loadSyncMeta(){
+  try{
+    const raw = localStorage.getItem(SYNC_META_KEY);
+    if(!raw) return defaultSyncMeta();
+    return Object.assign(defaultSyncMeta(), JSON.parse(raw));
+  }catch(e){ return defaultSyncMeta(); }
+}
+function saveSyncMeta(m){ localStorage.setItem(SYNC_META_KEY, JSON.stringify(m)); }
+// Marks that setlists/songs changed locally, so the next sync knows this
+// device has something to push (or to flag as a conflict). Never called for
+// display-only settings (theme, font sizes, etc.) — those aren't synced.
+function touchContent(){
+  const m = loadSyncMeta();
+  m.lastLocalChangeAt = Date.now();
+  saveSyncMeta(m);
+}
+
+function base64EncodeUtf8(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64DecodeUtf8(b64){ return decodeURIComponent(escape(atob(b64))); }
+
+async function githubGetFile(meta){
+  const url = 'https://api.github.com/repos/'+meta.repo+'/contents/'+meta.path;
+  const resp = await fetch(url, { headers:{
+    'Authorization':'Bearer '+meta.token,
+    'Accept':'application/vnd.github+json',
+    'X-GitHub-Api-Version':'2022-11-28'
+  }});
+  if(resp.status===404) return null;
+  if(!resp.ok) throw new Error('GitHub respondeu '+resp.status);
+  const json = await resp.json();
+  const content = base64DecodeUtf8((json.content||'').replace(/\n/g,''));
+  let data;
+  try{ data = JSON.parse(content); } catch(e){ throw new Error('Arquivo remoto inválido'); }
+  return { data, sha: json.sha };
+}
+async function githubPutFile(meta, payload, sha){
+  const url = 'https://api.github.com/repos/'+meta.repo+'/contents/'+meta.path;
+  const body = {
+    message: 'Sincronizar setlist ('+new Date().toLocaleString('pt-BR')+')',
+    content: base64EncodeUtf8(JSON.stringify(payload))
+  };
+  if(sha) body.sha = sha;
+  const resp = await fetch(url, {
+    method:'PUT',
+    headers:{
+      'Authorization':'Bearer '+meta.token,
+      'Accept':'application/vnd.github+json',
+      'X-GitHub-Api-Version':'2022-11-28',
+      'Content-Type':'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok){
+    const t = await resp.text().catch(()=> '');
+    throw new Error('GitHub respondeu '+resp.status+(t?(': '+t.slice(0,140)):''));
+  }
+  const json = await resp.json();
+  return { sha: json.content.sha };
+}
+
+let syncBusy = false;
+let pendingRemoteApply = null; // set when a safe auto-pull is ready but the person is on Stage/Lyrics
+
+async function runSync(manual){
+  if(syncBusy) return;
+  const meta = loadSyncMeta();
+  if(!meta.token || !meta.repo){
+    if(manual) alert('Configure o token e o repositório de sincronização primeiro, em Ajustes.');
+    return;
+  }
+  if(!navigator.onLine){
+    if(manual) alert('Sem internet no momento — tente novamente quando estiver conectado.');
+    return;
+  }
+  syncBusy = true;
+  try{
+    const remote = await githubGetFile(meta);
+    if(remote === null){
+      // nothing saved on GitHub yet — safe to push this device's data as the first version
+      await pushLocalData(meta, null);
+      if(manual) alert('Sincronizado! Esta é a primeira versão salva no GitHub.');
+    } else {
+      const remoteUpdatedAt = remote.data.updatedAt || 0;
+      const localSyncedAt = meta.lastSyncedAt || 0;
+      const localChangedAt = meta.lastLocalChangeAt || 0;
+      const remoteChanged = remoteUpdatedAt > localSyncedAt;
+      const localChanged = localChangedAt > localSyncedAt;
+
+      if(!remoteChanged && !localChanged){
+        if(manual) alert('Já está tudo sincronizado.');
+      } else if(remoteChanged && !localChanged){
+        if(state.view==='stage' || state.view==='lyrics'){
+          pendingRemoteApply = { data:remote.data, sha:remote.sha };
+          if(manual) alert('Encontrei uma versão mais nova — será aplicada assim que você sair do modo Palco/Letra.');
+        } else {
+          applyRemoteData(remote.data, remote.sha);
+          if(manual) alert('Sincronizado! Trouxe a versão mais nova do GitHub.');
+        }
+      } else if(!remoteChanged && localChanged){
+        await pushLocalData(meta, remote.sha);
+        if(manual) alert('Sincronizado! Suas mudanças foram enviadas para o GitHub.');
+      } else {
+        showConflictBanner({ data:remote.data, sha:remote.sha });
+        if(manual) alert('Há mudanças dos dois lados — escolha o que fazer na faixa que apareceu no topo da tela.');
+      }
+    }
+  }catch(err){
+    if(manual) alert('Não consegui sincronizar agora: '+(err&&err.message?err.message:'erro desconhecido'));
+  } finally {
+    syncBusy = false;
+  }
+}
+function applyRemoteData(data, sha){
+  db.setlists = data.setlists || [];
+  db.songs = {};
+  Object.keys(data.songs||{}).forEach(sid=>{
+    db.songs[sid] = Object.assign(blankSong(), {id:sid}, data.songs[sid]);
+  });
+  saveDB();
+  const m = loadSyncMeta();
+  const ts = data.updatedAt || Date.now();
+  m.lastSyncedAt = ts; m.lastLocalChangeAt = ts; m.remoteSha = sha;
+  saveSyncMeta(m);
+  if(state.view!=='stage' && state.view!=='lyrics') render();
+}
+async function pushLocalData(meta, sha){
+  const now = Date.now();
+  const payload = { setlists: db.setlists, songs: db.songs, updatedAt: now };
+  const result = await githubPutFile(meta, payload, sha);
+  const m = loadSyncMeta();
+  m.lastSyncedAt = now; m.lastLocalChangeAt = now; m.remoteSha = result.sha;
+  saveSyncMeta(m);
+}
+let activeConflict = null;
+function showConflictBanner(conflict){
+  activeConflict = conflict;
+  const el = document.getElementById('syncBanner');
+  if(!el) return;
+  el.innerHTML = `<div class="syncBannerBox">
+    <div>Encontrei uma versão diferente no GitHub, e este aparelho também tem mudanças ainda não sincronizadas. O que deseja fazer?</div>
+    <div class="row">
+      <button class="btn small primary" onclick="resolveConflict('push')">Enviar a daqui</button>
+      <button class="btn small" onclick="resolveConflict('pull')">Usar a do GitHub</button>
+      <button class="btn small ghost" onclick="dismissConflictBanner()">Agora não</button>
+    </div>
+  </div>`;
+}
+function dismissConflictBanner(){
+  activeConflict = null;
+  const el = document.getElementById('syncBanner');
+  if(el) el.innerHTML = '';
+}
+async function resolveConflict(choice){
+  if(!activeConflict) return;
+  const meta = loadSyncMeta();
+  try{
+    if(choice==='push'){ await pushLocalData(meta, activeConflict.sha); }
+    else { applyRemoteData(activeConflict.data, activeConflict.sha); }
+  }catch(err){
+    alert('Não consegui concluir: '+(err&&err.message?err.message:'erro desconhecido'));
+    return;
+  }
+  dismissConflictBanner();
+}
+function formatRelative(ts){
+  if(!ts) return '';
+  const diff = Math.max(0, Date.now()-ts);
+  const min = Math.floor(diff/60000);
+  if(min<1) return 'agora mesmo';
+  if(min<60) return 'há '+min+' min';
+  const h = Math.floor(min/60);
+  if(h<24) return 'há '+h+'h';
+  const d = Math.floor(h/24);
+  return 'há '+d+' dia'+(d>1?'s':'');
+}
+function saveSyncConfig(){
+  const token = document.getElementById('sy_token').value.trim();
+  const repo = document.getElementById('sy_repo').value.trim();
+  const m = loadSyncMeta();
+  m.token = token; m.repo = repo;
+  saveSyncMeta(m);
+  reopenSettings();
+  if(token && repo) runSync(true);
+}
+function disableSync(){
+  if(!confirm('Desativar a sincronização neste aparelho? O token salvo aqui será apagado (não afeta o que já está no GitHub).')) return;
+  saveSyncMeta(defaultSyncMeta());
+  reopenSettings();
+}
+
+function blankSong(){ return { title:'', artist:'', tone:'', bpm:'', notes:'', lyrics:'', cifra:'', align:'', fontOverride:'' }; }
 
 const LYRICS_FS_MAP = { sm:'30px', md:'40px', lg:'52px', xl:'66px' };
 const CIFRA_FS_MAP  = { sm:'20px', md:'26px', lg:'32px', xl:'40px' };
@@ -340,13 +554,20 @@ function render(){
     renderStage(sl);
   } else if(state.view==='lyrics'){
     renderLyrics();
-    title.textContent='';
+    const song = currentSong();
+    title.innerHTML = song ? `<button class="btn ghost fontBtn" onclick="cycleSongFontSize()" title="Tamanho da letra/cifra desta música">${fontBadgeLabel(song)}</button>` : '';
     left.innerHTML = `<button class="btn ghost" onclick="exitLyrics()">← Palco</button>`;
     right.innerHTML = settingsBtn;
   }
 }
 
-function goTo(view){ state.view=view; render(); }
+function goTo(view){
+  if(pendingRemoteApply && view!=='stage' && view!=='lyrics'){
+    const p = pendingRemoteApply; pendingRemoteApply = null;
+    applyRemoteData(p.data, p.sha);
+  }
+  state.view=view; render();
+}
 
 /* ---------------- SETLISTS SCREEN ---------------- */
 function renderSetlists(){
@@ -373,14 +594,14 @@ function createSetlist(){
   const name = prompt('Nome do setlist (ex: Show Bar do Zé - 20/09):');
   if(!name) return;
   const sl = { id:uid(), name:name.trim(), songs:[] };
-  db.setlists.push(sl); saveDB();
+  db.setlists.push(sl); saveDB(); touchContent();
   openSetlist(sl.id);
 }
 function renameSetlist(id){
   const sl = db.setlists.find(s=>s.id===id); if(!sl) return;
   const name = prompt('Novo nome:', sl.name);
   if(!name) return;
-  sl.name = name.trim(); saveDB(); render();
+  sl.name = name.trim(); saveDB(); touchContent(); render();
 }
 function duplicateSetlist(id){
   const sl = db.setlists.find(s=>s.id===id); if(!sl) return;
@@ -388,12 +609,12 @@ function duplicateSetlist(id){
   const name = prompt('Nome do novo setlist:', suggested);
   if(!name) return;
   const copy = { id:uid(), name:name.trim(), songs:[...sl.songs] };
-  db.setlists.push(copy); saveDB();
+  db.setlists.push(copy); saveDB(); touchContent();
   openSetlist(copy.id);
 }
 function deleteSetlist(id){
   if(!confirm('Excluir este setlist? As músicas cadastradas continuam salvas na biblioteca.')) return;
-  db.setlists = db.setlists.filter(s=>s.id!==id); saveDB(); render();
+  db.setlists = db.setlists.filter(s=>s.id!==id); saveDB(); touchContent(); render();
 }
 function openSetlist(id){ state.setlistId=id; goTo('setlist'); }
 
@@ -430,11 +651,11 @@ function moveSong(slId, i, dir){
   const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
   const j = i+dir; if(j<0||j>=sl.songs.length) return;
   [sl.songs[i], sl.songs[j]] = [sl.songs[j], sl.songs[i]];
-  saveDB(); render();
+  saveDB(); touchContent(); render();
 }
 function removeFromSetlist(slId, i){
   const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
-  sl.songs.splice(i,1); saveDB(); render();
+  sl.songs.splice(i,1); saveDB(); touchContent(); render();
 }
 
 /* ---------------- SONG EDIT SCREEN ---------------- */
@@ -494,6 +715,7 @@ function saveSongForm(){
     if(sl) sl.songs.push(id);
   }
   saveDB();
+  touchContent();
   goTo('setlist');
 }
 function deleteSongFromLibrary(){
@@ -502,6 +724,7 @@ function deleteSongFromLibrary(){
   delete db.songs[id];
   db.setlists.forEach(sl=>{ sl.songs = sl.songs.filter(sid=>sid!==id); });
   saveDB();
+  touchContent();
   goTo('setlist');
 }
 
@@ -545,6 +768,7 @@ function processPaste(){
     added++;
   });
   saveDB();
+  touchContent();
   goTo('setlist');
   setTimeout(()=>{ if(added) alert(added+' música(s) adicionada(s). Abra cada uma para colar a letra, se quiser.'); }, 50);
 }
@@ -635,6 +859,15 @@ function setLyricsMode(mode){
   if(state.lyricsMode===mode) return;
   state.lyricsMode = mode; state.lyricsChunk = 0; render();
 }
+const FONT_OVERRIDE_LABELS = { '':'A', sm:'A⁻', lg:'A⁺', xl:'A⁺⁺' };
+function fontBadgeLabel(song){ return FONT_OVERRIDE_LABELS[song.fontOverride||''] || 'A'; }
+function cycleSongFontSize(){
+  const song = currentSong(); if(!song) return;
+  const order = ['','sm','lg','xl'];
+  const cur = song.fontOverride || '';
+  song.fontOverride = order[(order.indexOf(cur)+1)%order.length];
+  saveDB(); touchContent(); render();
+}
 
 function renderLyrics(){
   const song = currentSong();
@@ -654,11 +887,13 @@ function renderLyrics(){
     body = `<div class="noLyrics">${msg}${song.notes?`<br><br><span style="font-size:16px">${esc(song.notes)}</span>`:''}</div>`;
   } else if(state.lyricsMode==='cifra'){
     const c = chunks[state.lyricsChunk];
-    body = `<div class="cifra-lines">${c.map(h=>h||'&nbsp;').join('\n')}</div>`;
+    const cfsOverride = (!db.settings.chordFitPage && song.fontOverride) ? CIFRA_FS_MAP[song.fontOverride] : '';
+    body = `<div class="cifra-lines" style="${cfsOverride?('font-size:'+cfsOverride+';'):''}">${c.map(h=>h||'&nbsp;').join('\n')}</div>`;
   } else {
     const c = chunks[state.lyricsChunk];
     const align = song.align || 'center';
-    body = `<div class="lines" style="text-align:${align}">${c.map(h=>`<div>${h||'&nbsp;'}</div>`).join('')}</div>`;
+    const fsOverride = song.fontOverride ? LYRICS_FS_MAP[song.fontOverride] : '';
+    body = `<div class="lines" style="text-align:${align};${fsOverride?('font-size:'+fsOverride+';'):''}">${c.map(h=>`<div>${h||'&nbsp;'}</div>`).join('')}</div>`;
   }
 
   let dots = '';
@@ -756,6 +991,10 @@ function lyricsPrev(){
 function openSettings(){
   const themeLabels = {dark:'Escuro', mono:'Monocromático (preto/branco)', monolight:'Monocromático claro'};
   const sfs = db.settings.stageFontSize;
+  const syncMeta = loadSyncMeta();
+  const syncConfigured = !!(syncMeta.token && syncMeta.repo);
+  const syncStatusText = !syncConfigured ? 'Não configurado' :
+    (syncMeta.lastSyncedAt ? 'Última sincronização: '+formatRelative(syncMeta.lastSyncedAt) : 'Configurado — ainda não sincronizou');
   const stageRow = (key, label) => `
       <div class="sheet-row"><span>${label}</span>
         <div class="stepper">
@@ -801,6 +1040,19 @@ function openSettings(){
       ${stageRow('list','Artista / lista')}
       ${stageRow('tone','Tonalidade')}
       ${stageRow('notes','Notas do show')}
+
+      <div class="sheet-row stack">
+        <span style="font-weight:600;">Sincronização entre dispositivos (GitHub)</span>
+        <span class="hint" style="margin:0;">${syncStatusText}</span>
+        <div class="field"><label>Token de acesso</label><input type="password" id="sy_token" value="${esc(syncMeta.token)}" placeholder="ghp_... ou github_pat_..."></div>
+        <div class="field"><label>Repositório privado (só para os dados)</label><input id="sy_repo" value="${esc(syncMeta.repo)}" placeholder="usuario/setlist-dados"></div>
+        <div class="backupBtns">
+          <button class="btn" onclick="saveSyncConfig()">Salvar</button>
+          <button class="btn" onclick="runSync(true)">🔄 Sincronizar agora</button>
+          ${syncConfigured ? `<button class="btn danger" onclick="disableSync()">Desativar</button>` : ''}
+        </div>
+        <div class="hint" style="margin:0;">O token dá acesso só a esse repositório — nunca compartilhe. Use um repositório PRIVADO, separado do app, exclusivo pra guardar os dados. Veja o LEIA-ME para o passo a passo de como criar.</div>
+      </div>
 
       <div class="sheet-row stack">
         <span style="font-weight:600;">Backup</span>
@@ -883,7 +1135,7 @@ function importData(ev){
       // fill in any new song fields (align/cifra) missing from older backups —
       // build a fresh object per song, never merge a song into itself
       Object.keys(db.songs).forEach(sid=>{ db.songs[sid] = Object.assign(blankSong(), db.songs[sid]); });
-      saveDB(); closeSettings(); goTo('setlists');
+      saveDB(); touchContent(); closeSettings(); goTo('setlists');
     }catch(e){ alert('Arquivo inválido.'); }
   };
   reader.readAsText(file);
@@ -923,6 +1175,16 @@ if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
+
+/* ---------------- AUTO-SYNC (silent, only if configured) ---------------- */
+(function(){
+  const m = loadSyncMeta();
+  if(m.token && m.repo) setTimeout(()=>runSync(false), 500);
+})();
+window.addEventListener('online', ()=>{
+  const m = loadSyncMeta();
+  if(m.token && m.repo) runSync(false);
+});
 
 /* ---------------- INIT ---------------- */
 render();

@@ -99,6 +99,55 @@ Isso substitui os dados do celular pelos do arquivo importado — é uma via de 
 
 Em **Ajustes ⚙** dá pra ajustar separadamente: tamanho da Letra, tamanho da Cifra, e no modo Palco (a lista de músicas do show) o tamanho do nome da música, do artista/lista, da tonalidade e das notas do show — cada um com seu próprio controle A− / A+.
 
+## Sincronizar automaticamente entre dispositivos (PC ↔ celular)
+
+Isso é opcional — sem configurar nada aqui, o app continua funcionando exatamente como sempre (local, offline, exportar/importar manual). Mas se você quiser que o setlist se mantenha sincronizado sozinho entre o PC e o celular, sem precisar exportar/importar toda vez, siga este passo a passo. Leva uns 10 minutos, uma vez só.
+
+**Importante sobre privacidade:** os dados ficam guardados num repositório **separado e privado** do GitHub — não no mesmo repositório público onde está o app. Assim, ninguém além de quem tiver o token consegue ver ou editar seu setlist, mesmo que descubram o link do app.
+
+### 1. Criar o repositório privado (só uma vez)
+1. No GitHub, toque no **+** → **New repository**
+2. Nome sugerido: `setlist-dados`
+3. Marque como **Private** (importante — diferente do repositório do app, que é público)
+4. Não marque nenhuma outra opção
+5. Toque em **Create repository**
+
+### 2. Gerar o token de acesso (só uma vez)
+1. No GitHub: toque no seu ícone de perfil → **Settings**
+2. Role até **Developer settings** (geralmente no fim do menu)
+3. **Personal access tokens → Fine-grained tokens → Generate new token**
+4. Dê um nome (ex: "Setlist Palco - sync")
+5. Em **Repository access**, escolha **Only select repositories** e selecione o `setlist-dados` que você criou
+6. Em **Permissions → Repository permissions**, encontre **Contents** e mude de "No access" para **Read and write**
+7. Toque em **Generate token**
+8. **Copie o token na hora** — o GitHub só mostra ele uma vez. Cole num app de notas temporariamente se precisar, até configurar no app.
+
+### 3. Configurar no app (fazer em CADA aparelho que você quer sincronizado)
+1. Abra o app → Ajustes ⚙ → seção "Sincronização entre dispositivos (GitHub)"
+2. **Token de acesso:** cole o token gerado no passo 2
+3. **Repositório:** digite `seu-usuario/setlist-dados` (troque pelo seu usuário do GitHub)
+4. Toque em **Salvar**
+
+Repita esses 4 passos no PC e no celular, usando o **mesmo token e mesmo repositório** nos dois. A partir daí, o app sincroniza sozinho toda vez que abrir com internet.
+
+### Como funciona no dia a dia
+- **Abriu o app com internet, sem ter mexido em nada desde a última sincronização:** puxa a versão mais nova sozinho, sem perguntar nada.
+- **Você editou algo neste aparelho e o outro lado não mudou:** envia sua edição sozinho, sem perguntar nada.
+- **Os dois lados mudaram desde a última sincronização (situação rara):** o app NÃO decide sozinho — aparece uma faixa no topo da tela perguntando se você quer manter a versão daqui ou usar a do GitHub. Nada é sobrescrito sem sua confirmação.
+- **Sem internet, ou GitHub fora do ar:** o app simplesmente não tenta, e segue funcionando 100% offline com os dados que já tem salvos — nenhum risco pro uso no palco.
+- **Durante uma apresentação (modo Palco ou Letra/Cifra aberto):** o app nunca troca o setlist debaixo do seu dedo. Se uma sincronização automática encontrar uma versão nova nesse momento, ela fica "guardada" e só é aplicada quando você sair de volta pra tela de setlist.
+- Também existe um botão **"🔄 Sincronizar agora"** em Ajustes, pra forçar quando quiser.
+
+### Segurança do token
+- O **token** dá acesso de escrita ao repositório `setlist-dados` — trate como uma senha, nunca compartilhe com a banda.
+- O arquivo de **backup `.json`** (Exportar/Importar) continua sendo o jeito certo de compartilhar o setlist com os colegas — esse nunca contém o token, é seguro de enviar por WhatsApp/e-mail.
+- Se quiser desativar a sincronização num aparelho, use o botão **Desativar** em Ajustes — isso apaga o token salvo ali (não afeta o que já está no GitHub nem os outros aparelhos).
+
+## Outros ajustes desta versão
+
+- **Tamanho da letra/cifra por música:** na tela de Letra/Cifra, entre o botão "← Palco" e o ícone de Ajustes, agora tem um botão **"A"**. Toque nele para alternar o tamanho só daquela música entre Padrão, Pequena, Grande e Extra Grande — útil quando uma letra específica está maior ou menor do que você gostaria, sem precisar mudar o tamanho padrão de todas as outras.
+- **Nome da próxima música maior:** o texto ">> Nome da música" no rodapé da Letra/Cifra está 50% maior, mais fácil de ler de relance durante o show.
+
 ## Backup e transferência entre aparelhos
 
 Em Ajustes ⚙ → Backup → **Exportar**, gera um arquivo `.json` com todos os seus setlists e letras. Para levar para outro celular/tablet, use **Importar** com esse mesmo arquivo. Os dados ficam salvos localmente no navegador (não são enviados para nenhum servidor) — por isso o backup manual é recomendado antes de trocar de aparelho, limpar o navegador, ou reinstalar.
