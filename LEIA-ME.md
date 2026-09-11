@@ -148,6 +148,60 @@ Repita esses 4 passos no PC e no celular, usando o **mesmo token e mesmo reposit
 - **Tamanho da letra/cifra por música:** na tela de Letra/Cifra, entre o botão "← Palco" e o ícone de Ajustes, agora tem um botão **"A"**. Toque nele para alternar o tamanho só daquela música entre Padrão, Pequena, Grande e Extra Grande — útil quando uma letra específica está maior ou menor do que você gostaria, sem precisar mudar o tamanho padrão de todas as outras.
 - **Nome da próxima música maior:** o texto ">> Nome da música" no rodapé da Letra/Cifra está 50% maior, mais fácil de ler de relance durante o show.
 
+## Novidades desta versão
+
+### Arrastar e soltar para reordenar
+Na lista de músicas do setlist, segure o ícone **⠿** à esquerda de cada música e arraste pra cima/baixo pra reordenar. As setas ↑↓ continuam funcionando do mesmo jeito, como alternativa.
+
+### Copiar músicas entre setlists
+Dentro de um setlist, toque em **"☑ Selecionar"** → marque uma ou várias músicas → **"Copiar para..."** → escolha um setlist existente ou **"Novo setlist com estas músicas"**.
+
+Importante: a cópia usa a **mesma música** nos dois setlists (é o mesmo modelo do "Duplicar setlist" que já existia) — se você editar a letra, cifra, tom etc. dela em um setlist, a mudança aparece em todos os outros lugares onde ela também estiver. Isso é ótimo pra manter tudo consistente (corrige uma vez, corrige em todo lugar), mas se um dia você precisar de uma versão realmente independente por setlist, me avise que dá pra mudar esse comportamento.
+
+### Partitura (PDF ou imagem)
+Na edição da música, novo campo **🎵 Partitura** — anexe um PDF, PNG ou JPG. No modo Palco, agora tem uma terceira aba **🎵** ao lado de Letra e Cifra, pra visualizar a partitura com os mesmos controles de pedal/teclado (como ela não tem "linhas" pra paginar, cada toque de avançar/voltar já pula pra próxima/anterior música).
+
+**Atenção, isso é diferente das outras informações:** a partitura fica guardada **só neste aparelho**, num espaço de armazenamento maior e separado (criei essa estrutura nova especialmente pra caber arquivo grande sem quebrar nada do que já existia). Ela **não é enviada pela sincronização automática do GitHub** (arquivos de imagem/PDF são grandes demais pra essa forma de sincronizar) — se quiser a mesma partitura no celular e no PC, anexe o arquivo separadamente em cada aparelho.
+
+### Tela sempre ativa durante o show
+Agora, ao entrar no **Modo Palco**, o app tenta automaticamente manter a tela ligada (sem escurecer/bloquear sozinha), usando um recurso nativo do navegador — sem precisar de nenhum ajuste ou botão extra. Ela libera essa trava automaticamente quando você sai de volta pra tela de Setlist.
+
+Um ícone de olho (👁) discreto aparece ao lado do ⚙ quando a trava está ativa.
+
+**Limitações que preciso ser honesto sobre:**
+- No **Android** (Chrome), funciona de forma confiável.
+- No **iPhone**, esse recurso é recente: só funciona em apps instalados na tela (como o seu) a partir do **iOS 18.4**. Em versões mais antigas, o iOS simplesmente não é capaz de manter a tela ligada nesse cenário. Há também relatos (não totalmente confirmados) de instabilidade em versões beta bem recentes.
+- Se o **Modo de Baixo Consumo/Economia de Energia** estiver ligado no iPhone, ele costuma bloquear esse recurso mesmo em versões que deveriam suportar.
+- Se o app não conseguir manter a tela ativa, aparece um aviso discreto (uma faixa no topo, dispensável) sugerindo ajustar manualmente o bloqueio automático de tela nas configurações do sistema antes do show — nada quebra, é só um lembrete.
+
+**Recomendação prática:** antes de um show importante, vale testar previamente se a tela do seu iPhone realmente fica ligada sozinha no Modo Palco. Se não ficar, ajustar manualmente o tempo de bloqueio automático (Ajustes do iPhone → Tela e Brilho → Bloqueio Automático → Nunca, durante o show) continua sendo a forma 100% garantida, independente de versão do iOS.
+
+## Novidades desta versão
+
+### Arrastar e soltar para reordenar
+Na lista de músicas do setlist, cada linha agora tem uma alça **⠿** à esquerda. Pressione e segure nela para arrastar a música pra nova posição (funciona com o dedo no celular e com o mouse no PC). As setas ↑ ↓ continuam funcionando do mesmo jeito, como alternativa.
+
+### Copiar músicas entre setlists
+Dentro de um setlist, toque em **"☑ Selecionar"** (só aparece se o setlist já tiver músicas). Toque nas músicas que quiser marcar, depois em **"Copiar para..."** — escolha um setlist existente ou **"+ Novo setlist com estas músicas"**.
+
+**Importante sobre como funciona:** a cópia usa a mesma música (não duplica os dados) — é o mesmo comportamento de "Duplicar setlist" que já existia. Ou seja, se depois você editar a letra, cifra ou qualquer campo dessa música num setlist, a mudança aparece em todos os outros setlists que também a usam. Se um dia precisar que sejam versões totalmente independentes (editáveis sem afetar uma à outra), me avise que eu ajusto.
+
+### Partitura (PDF ou imagem)
+Na tela de editar música, novo campo **"🎵 Partitura"** — anexe um PDF ou imagem (PNG/JPG). No modo Palco, aparece um terceiro botão **🎵** ao lado de Letra/Cifra pra alternar. Pedal/teclado (setas, Page Up/Down) navegam para a próxima/anterior música nesse modo, já que a partitura é exibida inteira, sem paginação por linhas.
+
+**Atenção — isso NÃO sincroniza automaticamente entre dispositivos.** Arquivos de partitura são grandes demais para a sincronização via GitHub que configuramos (que tem limite de 1MB por arquivo, ótimo pra texto, pequeno demais pra PDF/imagem). Cada aparelho precisa ter o arquivo anexado separadamente — é a única informação que fica de fora da sincronização automática; tudo o resto (letra, cifra, tom, notas, ordem das músicas) sincroniza normalmente.
+
+### Tela sempre ativa (Wake Lock) durante o show
+Ao entrar no **Modo Palco**, o app agora tenta manter a tela ligada automaticamente, sem precisar mexer nas configurações do celular — e libera essa trava sozinho ao sair de volta pra lista de setlists. Um pequeno ícone de olho (👁) aparece no topo da tela quando está ativo.
+
+**Limitações importantes que preciso ser transparente:**
+- **Android (Chrome):** funciona bem e de forma estável.
+- **iPhone:** esse recurso é recente da Apple e só funciona de forma confiável em apps instalados na Tela de Início a partir do **iOS 18.4**. Em versões mais antigas (16.4 a 18.3), funciona no Safari normal, mas **não** no app instalado — é uma limitação do próprio iOS, não do nosso app. Já houve inclusive relatos de instabilidade em versões bem recentes do iOS.
+- **Modo de Baixo Consumo/Economia de Energia** no iPhone costuma bloquear esse recurso mesmo em iOS atualizado — vale desligar antes do show, por precaução.
+- Se o app não conseguir manter a tela ligada (navegador sem suporte, ou o sistema recusar), aparece um aviso discreto no topo da tela sugerindo ajustar manualmente o bloqueio automático nas configurações do sistema — nada trava ou quebra, é só um lembrete.
+
+**Recomendação prática:** antes de um show importante, ainda vale a pena ajustar manualmente o tempo de bloqueio de tela do celular (deixar mais longo) como reforço, principalmente no iPhone — trate o Wake Lock automático como um "bônus" que funciona na maioria das vezes, não como garantia absoluta em todo aparelho/versão de iOS.
+
 ## Backup e transferência entre aparelhos
 
 Em Ajustes ⚙ → Backup → **Exportar**, gera um arquivo `.json` com todos os seus setlists e letras. Para levar para outro celular/tablet, use **Importar** com esse mesmo arquivo. Os dados ficam salvos localmente no navegador (não são enviados para nenhum servidor) — por isso o backup manual é recomendado antes de trocar de aparelho, limpar o navegador, ou reinstalar.

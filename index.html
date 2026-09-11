@@ -74,6 +74,27 @@
   .row .meta{ color:var(--dim); font-size:13px; flex-shrink:0; text-align:right; }
   .row .actions{ display:flex; gap:4px; flex-shrink:0; }
   .row.selected{ background:var(--card); box-shadow:inset 3px 0 0 var(--accent); }
+  .dragHandle{ color:var(--dim); font-size:20px; padding:4px 6px; touch-action:none; cursor:grab; flex-shrink:0; }
+  .row.dragging{ opacity:0.55; box-shadow:0 4px 14px rgba(0,0,0,0.4); background:var(--card); }
+  .row.dragging .dragHandle{ cursor:grabbing; }
+  .checkCircle{
+    width:22px; height:22px; border-radius:50%; border:2px solid var(--line);
+    flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--bg); font-size:13px; font-weight:900;
+  }
+  .checkCircle.on{ background:var(--accent); border-color:var(--accent); }
+  .selectBar{
+    position:sticky; bottom:0; display:flex; align-items:center; gap:8px;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom)) 16px;
+    background:var(--bg); border-top:1px solid var(--line);
+  }
+  .selectBar span{ color:var(--dim); font-size:13px; flex-shrink:0; }
+  .selectBar .btn{ flex:1; }
+  .pickList{ display:flex; flex-direction:column; gap:6px; max-height:50vh; overflow-y:auto; }
+  .pickList .btn{ width:100%; text-align:left; justify-content:flex-start; }
+  .sheetWrap{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+  .sheetFrame{ width:100%; height:100%; border:none; background:#fff; }
+  .sheetImg{ max-width:100%; max-height:100%; object-fit:contain; }
+  .wakeDot{ display:inline-flex; align-items:center; justify-content:center; width:30px; font-size:15px; flex-shrink:0; }
 
   .fab-row{ display:flex; gap:8px; padding:16px; flex-wrap:wrap; }
 
@@ -453,7 +474,58 @@ function disableSync(){
   reopenSettings();
 }
 
-function blankSong(){ return { title:'', artist:'', tone:'', bpm:'', notes:'', lyrics:'', cifra:'', align:'', fontOverride:'' }; }
+function blankSong(){ return { title:'', artist:'', tone:'', bpm:'', notes:'', lyrics:'', cifra:'', align:'', fontOverride:'', sheetMusicName:'', sheetMusicType:'' }; }
+
+/* ---------------- SHEET MUSIC FILES (IndexedDB) ----------------
+   Only the binary files (PDF/image) live here — completely separate from the
+   main localStorage-based db (setlists/songs/settings), which is untouched.
+   The song object only keeps lightweight metadata (sheetMusicName/Type); the
+   actual file blob is stored in IndexedDB keyed by the song's own id. This
+   keeps the well-tested existing save/load flow at zero risk, and keeps the
+   GitHub sync payload (text only) small — sheet music files are NOT synced
+   automatically between devices; each device needs its own file attached.
+*/
+const IDB_NAME = 'setlistpalco_files';
+const IDB_STORE = 'sheetmusic';
+let idbPromise = null;
+function openIDB(){
+  if(idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject)=>{
+    if(!('indexedDB' in window)){ reject(new Error('IndexedDB indisponível neste navegador')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+  return idbPromise;
+}
+async function idbPutSheetMusic(songId, record){
+  const conn = await openIDB();
+  return new Promise((resolve, reject)=>{
+    const tx = conn.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(record, songId);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function idbGetSheetMusic(songId){
+  const conn = await openIDB();
+  return new Promise((resolve, reject)=>{
+    const tx = conn.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(songId);
+    req.onsuccess = ()=> resolve(req.result || null);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+async function idbDeleteSheetMusic(songId){
+  const conn = await openIDB();
+  return new Promise((resolve, reject)=>{
+    const tx = conn.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(songId);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
 
 const LYRICS_FS_MAP = { sm:'30px', md:'40px', lg:'52px', xl:'66px' };
 const CIFRA_FS_MAP  = { sm:'20px', md:'26px', lg:'32px', xl:'40px' };
@@ -464,7 +536,60 @@ const STAGE_NOTES_FS = { sm:'12px', md:'15px', lg:'19px', xl:'24px' };
 const FS_LABELS = { sm:'Pequena', md:'Média', lg:'Grande', xl:'Extra grande' };
 
 /* ---------------- STATE / NAV ---------------- */
-let state = { view:'setlists', setlistId:null, editingSongId:null, stageIndex:0, lyricsChunk:0, lyricsMode:'letra' };
+let state = { view:'setlists', setlistId:null, editingSongId:null, stageIndex:0, lyricsChunk:0, lyricsMode:'letra', selectMode:false, selectedSongs:[] };
+
+/* ---------------- SCREEN WAKE LOCK ----------------
+   Ties to the performance session (Stage + Lyrics views), requested via goTo()
+   below. Fails silently and shows a one-time discreet banner if unsupported
+   or blocked — never breaks the app either way.
+*/
+let wakeLockSentinel = null;
+const wakeLockSupported = (typeof navigator!=='undefined' && 'wakeLock' in navigator);
+let wakeLockWarned = false;
+async function requestWakeLock(){
+  if(!wakeLockSupported){
+    if(!wakeLockWarned){ wakeLockWarned = true; showWakeLockHint(); }
+    return;
+  }
+  try{
+    wakeLockSentinel = await navigator.wakeLock.request('screen');
+    wakeLockSentinel.addEventListener('release', ()=>{ wakeLockSentinel = null; updateWakeLockIndicator(); });
+    updateWakeLockIndicator();
+  }catch(err){
+    wakeLockSentinel = null;
+    updateWakeLockIndicator();
+    if(!wakeLockWarned){ wakeLockWarned = true; showWakeLockHint(); }
+  }
+}
+function releaseWakeLock(){
+  if(wakeLockSentinel){
+    wakeLockSentinel.release().catch(()=>{});
+    wakeLockSentinel = null;
+  }
+  updateWakeLockIndicator();
+}
+if(typeof document!=='undefined'){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible' && (state.view==='stage'||state.view==='lyrics') && !wakeLockSentinel){
+      requestWakeLock();
+    }
+  });
+}
+function updateWakeLockIndicator(){
+  const el = document.getElementById('wakeLockDot');
+  if(!el) return;
+  el.textContent = wakeLockSentinel ? '👁' : '';
+  el.title = wakeLockSentinel ? 'Tela sempre ativa' : '';
+}
+function dismissWakeHint(){ const el = document.getElementById('syncBanner'); if(el) el.innerHTML=''; }
+function showWakeLockHint(){
+  const el = document.getElementById('syncBanner');
+  if(!el) return;
+  el.innerHTML = `<div class="syncBannerBox">
+    <div>Não consegui manter a tela sempre ligada automaticamente neste aparelho/navegador. Ajuste o bloqueio automático de tela nas configurações do sistema antes do show (e verifique se o Modo de Baixo Consumo/Economia de energia está desligado, pois ele costuma bloquear esse recurso).</div>
+    <div class="row"><button class="btn small ghost" onclick="dismissWakeHint()">Entendi</button></div>
+  </div>`;
+}
 
 function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -524,7 +649,9 @@ function render(){
   const title = document.getElementById('title');
   left.innerHTML=''; right.innerHTML='';
 
-  const settingsBtn = `<button class="btn ghost" onclick="openSettings()" aria-label="Ajustes">⚙</button>`;
+  const performing = (state.view==='stage' || state.view==='lyrics');
+  const wakeDot = performing ? `<span id="wakeLockDot" class="wakeDot"></span>` : '';
+  const settingsBtn = wakeDot + `<button class="btn ghost" onclick="openSettings()" aria-label="Ajustes">⚙</button>`;
 
   if(state.view==='setlists'){
     title.textContent='Meus Setlists';
@@ -559,6 +686,7 @@ function render(){
     left.innerHTML = `<button class="btn ghost" onclick="exitLyrics()">← Palco</button>`;
     right.innerHTML = settingsBtn;
   }
+  updateWakeLockIndicator();
 }
 
 function goTo(view){
@@ -566,7 +694,12 @@ function goTo(view){
     const p = pendingRemoteApply; pendingRemoteApply = null;
     applyRemoteData(p.data, p.sha);
   }
+  if(state.view==='lyrics' && view!=='lyrics') revokeSheetBlobUrl();
+  const wasPerforming = (state.view==='stage' || state.view==='lyrics');
+  const willPerform = (view==='stage' || view==='lyrics');
   state.view=view; render();
+  if(willPerform && !wasPerforming) requestWakeLock();
+  else if(!willPerform && wasPerforming) releaseWakeLock();
 }
 
 /* ---------------- SETLISTS SCREEN ---------------- */
@@ -619,6 +752,16 @@ function deleteSetlist(id){
 function openSetlist(id){ state.setlistId=id; goTo('setlist'); }
 
 /* ---------------- SETLIST (SONG LIST) SCREEN ---------------- */
+function toggleSelectMode(){
+  state.selectMode = !state.selectMode;
+  state.selectedSongs = [];
+  render();
+}
+function toggleSongSelection(songId){
+  const i = state.selectedSongs.indexOf(songId);
+  if(i===-1) state.selectedSongs.push(songId); else state.selectedSongs.splice(i,1);
+  render();
+}
 function renderSetlist(sl){
   const el = document.getElementById('screen');
   if(!sl){ el.innerHTML=`<div class="empty">Setlist não encontrado.</div>`; return; }
@@ -626,27 +769,79 @@ function renderSetlist(sl){
     <button class="btn" onclick="editSong(null)">+ Adicionar música</button>
     <button class="btn" onclick="goTo('paste')">+ Colar do Spotify</button>
     <button class="btn" onclick="duplicateSetlist('${sl.id}')">⧉ Duplicar setlist</button>
+    ${sl.songs.length ? `<button class="btn ${state.selectMode?'active':''}" onclick="toggleSelectMode()">${state.selectMode?'✕ Cancelar seleção':'☑ Selecionar'}</button>` : ''}
   </div>`;
   if(sl.songs.length===0){
     html += `<div class="empty"><b>Setlist vazio</b>Adicione músicas manualmente ou cole uma lista copiada do Spotify.</div>`;
   } else {
-    html += `<div class="rowlist">`;
+    html += `<div class="rowlist" id="rowlist">`;
     sl.songs.forEach((songId, i)=>{
       const s = db.songs[songId]; if(!s) return;
-      html += `<div class="row" onclick="editSong('${s.id}')">
+      const isSel = state.selectedSongs.includes(songId);
+      const rowClick = state.selectMode ? `toggleSongSelection('${songId}')` : `editSong('${s.id}')`;
+      html += `<div class="row" data-songid="${songId}" onclick="${rowClick}">
+        ${state.selectMode
+          ? `<div class="checkCircle ${isSel?'on':''}">${isSel?'✓':''}</div>`
+          : `<div class="dragHandle" data-i="${i}">⠿</div>`}
         <div class="idx">${i+1}</div>
         <div class="info"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist||'')}</div></div>
         <div class="meta">${s.tone?esc(s.tone):''}${s.bpm?' · '+esc(s.bpm)+' bpm':''}</div>
-        <div class="actions">
+        ${state.selectMode ? '' : `<div class="actions">
           <button class="btn ghost" onclick="event.stopPropagation(); moveSong('${sl.id}',${i},-1)">↑</button>
           <button class="btn ghost" onclick="event.stopPropagation(); moveSong('${sl.id}',${i},1)">↓</button>
           <button class="btn ghost" onclick="event.stopPropagation(); removeFromSetlist('${sl.id}',${i})">✕</button>
-        </div></div>`;
+        </div>`}</div>`;
     });
     html += `</div>`;
+    if(state.selectMode){
+      html += `<div class="selectBar">
+        <span>${state.selectedSongs.length} selecionada${state.selectedSongs.length!==1?'s':''}</span>
+        <button class="btn primary" ${state.selectedSongs.length?'':'disabled'} onclick="openCopyPicker('${sl.id}')">Copiar para...</button>
+      </div>`;
+    }
   }
   el.innerHTML = html;
+  if(!state.selectMode) attachDragHandlers(sl);
 }
+
+// Drag-to-reorder: press-and-hold the ⠿ handle (works for mouse and touch via
+// Pointer Events) and drag up/down to reposition. The arrow buttons keep
+// working exactly as before as an alternative.
+function attachDragHandlers(sl){
+  const container = document.getElementById('rowlist');
+  if(!container) return;
+  container.querySelectorAll('.dragHandle').forEach(handle=>{
+    handle.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      const row = handle.closest('.row');
+      if(!row) return;
+      try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+      row.classList.add('dragging');
+      const onMove = (ev)=>{
+        const rows = [...container.querySelectorAll('.row')];
+        const y = ev.clientY;
+        for(const r of rows){
+          if(r===row) continue;
+          const rect = r.getBoundingClientRect();
+          const mid = rect.top + rect.height/2;
+          if(y < mid && r.previousElementSibling===row){ container.insertBefore(row, r); break; }
+          if(y > mid && r.nextElementSibling===row){ container.insertBefore(row, r.nextElementSibling); break; }
+        }
+      };
+      const onUp = ()=>{
+        row.classList.remove('dragging');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        const newOrder = [...container.querySelectorAll('.row')].map(r=>r.dataset.songid);
+        sl.songs = newOrder;
+        saveDB(); touchContent(); render();
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
 function moveSong(slId, i, dir){
   const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
   const j = i+dir; if(j<0||j>=sl.songs.length) return;
@@ -656,6 +851,53 @@ function moveSong(slId, i, dir){
 function removeFromSetlist(slId, i){
   const sl = db.setlists.find(s=>s.id===slId); if(!sl) return;
   sl.songs.splice(i,1); saveDB(); touchContent(); render();
+}
+
+// ---- Copy selected songs to another (or a new) setlist ----
+// Copies share the same underlying song (same model as "Duplicar setlist"):
+// editing the song's lyrics/cifra/etc. in one place updates it everywhere it
+// appears. Simplest and most consistent with how the rest of the app works.
+function openCopyPicker(fromSlId){
+  if(state.selectedSongs.length===0) return;
+  const others = db.setlists.filter(s=>s.id!==fromSlId);
+  const html = `<div class="overlay" onclick="if(event.target===this) closePicker()">
+    <div class="sheet">
+      <h2>Copiar ${state.selectedSongs.length} música${state.selectedSongs.length!==1?'s':''} para</h2>
+      <div class="pickList">
+        <button class="btn primary" onclick="copySelectedToNew('${fromSlId}')">+ Novo setlist com estas músicas</button>
+        ${others.map(s=>`<button class="btn" onclick="copySelectedTo('${fromSlId}','${s.id}')">${esc(s.name)} (${s.songs.length} música${s.songs.length!==1?'s':''})</button>`).join('')}
+      </div>
+      <div style="padding-top:14px;"><button class="btn" style="width:100%" onclick="closePicker()">Cancelar</button></div>
+    </div>
+  </div>`;
+  const wrap = document.createElement('div');
+  wrap.id = 'pickerOverlay';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+}
+function closePicker(){ const el = document.getElementById('pickerOverlay'); if(el) el.remove(); }
+function copySelectedTo(fromSlId, targetSlId){
+  const target = db.setlists.find(s=>s.id===targetSlId);
+  if(!target) return;
+  let added = 0;
+  state.selectedSongs.forEach(songId=>{
+    if(!target.songs.includes(songId)){ target.songs.push(songId); added++; }
+  });
+  saveDB(); touchContent();
+  closePicker();
+  state.selectMode = false; state.selectedSongs = [];
+  render();
+  setTimeout(()=>{ alert(added+' música(s) copiada(s) para "'+target.name+'".'); }, 50);
+}
+function copySelectedToNew(fromSlId){
+  const name = prompt('Nome do novo setlist:');
+  if(!name) return;
+  const copy = { id:uid(), name:name.trim(), songs:[...state.selectedSongs] };
+  db.setlists.push(copy);
+  saveDB(); touchContent();
+  closePicker();
+  state.selectMode = false; state.selectedSongs = [];
+  openSetlist(copy.id);
 }
 
 /* ---------------- SONG EDIT SCREEN ---------------- */
@@ -690,10 +932,17 @@ function renderSongEdit(){
       <div class="hint">A Cifra fica numa tela separada da Letra no modo Palco, com um botão para alternar entre as duas. Também aceita **destaque**.</div>
     </div>
 
+    <div class="field">
+      <label>🎵 Partitura (PDF ou imagem, opcional)</label>
+      ${s.sheetMusicName ? `<div class="hint" style="margin-bottom:8px;">Arquivo atual: <b style="color:var(--fg)">${esc(s.sheetMusicName)}</b> — <a href="#" onclick="event.preventDefault(); removeSheetMusic();" style="color:var(--danger)">remover</a></div>` : ''}
+      <input type="file" id="f_sheet" accept="application/pdf,image/png,image/jpeg,image/jpg">
+      <div class="hint">Fica numa terceira aba (🎵) no modo Palco, junto com Letra e Cifra. Fica salva só neste aparelho — não é enviada pela sincronização automática (arquivos são grandes demais para isso); anexe em cada aparelho separadamente, se precisar.</div>
+    </div>
+
     ${state.editingSongId ? `<button class="btn danger" onclick="deleteSongFromLibrary()">Excluir música</button>` : ''}
   </div>`;
 }
-function saveSongForm(){
+async function saveSongForm(){
   const title = document.getElementById('f_title').value.trim();
   if(!title){ alert('Digite o título da música.'); return; }
   const data = {
@@ -714,15 +963,43 @@ function saveSongForm(){
     const sl = db.setlists.find(s=>s.id===state.setlistId);
     if(sl) sl.songs.push(id);
   }
+
+  const fileInput = document.getElementById('f_sheet');
+  const file = fileInput && fileInput.files[0];
+  if(file){
+    if(file.size > 15*1024*1024 && !confirm('Esse arquivo é bem grande ('+Math.round(file.size/1024/1024)+'MB) e pode demorar pra carregar no show. Continuar mesmo assim?')) {
+      // keep the song saved, just skip attaching the file
+    } else {
+      try{
+        const type = file.type==='application/pdf' ? 'pdf' : 'image';
+        await idbPutSheetMusic(id, { type, mime:file.type, blob:file });
+        db.songs[id].sheetMusicName = file.name;
+        db.songs[id].sheetMusicType = type;
+      }catch(err){
+        alert('Não consegui salvar a partitura: '+(err&&err.message?err.message:'erro desconhecido'));
+      }
+    }
+  }
+
   saveDB();
   touchContent();
   goTo('setlist');
+}
+function removeSheetMusic(){
+  const id = state.editingSongId; if(!id) return;
+  if(!confirm('Remover a partitura desta música?')) return;
+  idbDeleteSheetMusic(id).catch(()=>{});
+  db.songs[id].sheetMusicName = '';
+  db.songs[id].sheetMusicType = '';
+  saveDB(); touchContent();
+  renderSongEdit();
 }
 function deleteSongFromLibrary(){
   if(!confirm('Excluir esta música da biblioteca? Ela será removida de todos os setlists.')) return;
   const id = state.editingSongId;
   delete db.songs[id];
   db.setlists.forEach(sl=>{ sl.songs = sl.songs.filter(sid=>sid!==id); });
+  idbDeleteSheetMusic(id).catch(()=>{});
   saveDB();
   touchContent();
   goTo('setlist');
@@ -816,12 +1093,16 @@ function stageMove(dir){
   render();
 }
 
-/* ---------------- LYRICS / CIFRA VIEW ---------------- */
+/* ---------------- LYRICS / CIFRA / PARTITURA VIEW ---------------- */
 function enterLyrics(){
   state.lyricsChunk=0;
   const song = currentSongForSetlist();
-  if(song && !song.lyrics && song.cifra) state.lyricsMode='cifra';
-  else state.lyricsMode='letra';
+  if(song){
+    if(song.lyrics) state.lyricsMode='letra';
+    else if(song.cifra) state.lyricsMode='cifra';
+    else if(song.sheetMusicName) state.lyricsMode='partitura';
+    else state.lyricsMode='letra';
+  } else state.lyricsMode='letra';
   goTo('lyrics');
 }
 function exitLyrics(){ goTo('stage'); }
@@ -853,10 +1134,22 @@ function chordChunks(song){
   for(let i=0;i<linesHtml.length;i+=perPage) chunks.push(linesHtml.slice(i,i+perPage));
   return chunks;
 }
-function activeChunks(song){ return state.lyricsMode==='cifra' ? chordChunks(song) : lyricsChunks(song); }
+// Partitura has no line-pagination concept — it's a single "page" per song
+// (like Cifra's "página inteira"), so pedal next/prev jumps straight to the
+// next/previous song once you're viewing it.
+function activeChunks(song){
+  if(state.lyricsMode==='cifra') return chordChunks(song);
+  if(state.lyricsMode==='partitura') return song.sheetMusicName ? [[1]] : [];
+  return lyricsChunks(song);
+}
 
+let currentSheetBlobUrl = null;
+function revokeSheetBlobUrl(){
+  if(currentSheetBlobUrl){ URL.revokeObjectURL(currentSheetBlobUrl); currentSheetBlobUrl = null; }
+}
 function setLyricsMode(mode){
   if(state.lyricsMode===mode) return;
+  if(state.lyricsMode==='partitura') revokeSheetBlobUrl();
   state.lyricsMode = mode; state.lyricsChunk = 0; render();
 }
 const FONT_OVERRIDE_LABELS = { '':'A', sm:'A⁻', lg:'A⁺', xl:'A⁺⁺' };
@@ -877,12 +1170,17 @@ function renderLyrics(){
 
   const hasLyrics = !!(song.lyrics && song.lyrics.trim());
   const hasCifra = !!(song.cifra && song.cifra.trim());
+  const hasSheet = !!song.sheetMusicName;
   const chunks = activeChunks(song);
   state.lyricsChunk = Math.max(0, Math.min(state.lyricsChunk, Math.max(chunks.length-1,0)));
   const posLabel = `${state.stageIndex+1}/${sl.songs.length}`;
 
   let body;
-  if(chunks.length===0){
+  if(state.lyricsMode==='partitura'){
+    body = hasSheet
+      ? `<div class="sheetWrap" id="sheetWrap"><div class="noLyrics">Carregando partitura…</div></div>`
+      : `<div class="noLyrics">Sem partitura cadastrada para esta música.${song.notes?`<br><br><span style="font-size:16px">${esc(song.notes)}</span>`:''}</div>`;
+  } else if(chunks.length===0){
     const msg = state.lyricsMode==='cifra' ? 'Sem cifra cadastrada para esta música.' : 'Sem letra cadastrada para esta música.';
     body = `<div class="noLyrics">${msg}${song.notes?`<br><br><span style="font-size:16px">${esc(song.notes)}</span>`:''}</div>`;
   } else if(state.lyricsMode==='cifra'){
@@ -901,9 +1199,10 @@ function renderLyrics(){
     dots = `<div class="dots">` + chunks.map((_,i)=>`<div class="dot ${i===state.lyricsChunk?'on':''}"></div>`).join('') + `</div>`;
   } else { dots = `<div></div>`; }
 
-  const toggle = (hasLyrics || hasCifra) ? `<div class="modeToggle">
+  const toggle = (hasLyrics || hasCifra || hasSheet) ? `<div class="modeToggle">
       <button class="btn small ${state.lyricsMode==='letra'?'active':''}" onclick="setLyricsMode('letra')">Letra</button>
       <button class="btn small ${state.lyricsMode==='cifra'?'active':''}" onclick="setLyricsMode('cifra')">Cifra</button>
+      <button class="btn small ${state.lyricsMode==='partitura'?'active':''}" onclick="setLyricsMode('partitura')" title="Partitura">🎵</button>
     </div>` : '';
 
   const nt = nextTitle();
@@ -936,6 +1235,32 @@ function renderLyrics(){
 
   if(state.lyricsMode==='cifra' && db.settings.chordFitPage && chunks.length){
     requestAnimationFrame(fitCifraToPage);
+  }
+  if(state.lyricsMode==='partitura' && hasSheet){
+    loadPartituraIntoView(song);
+  }
+}
+let sheetRequestToken = 0;
+async function loadPartituraIntoView(song){
+  const myToken = ++sheetRequestToken;
+  revokeSheetBlobUrl();
+  try{
+    const rec = await idbGetSheetMusic(song.id);
+    if(myToken !== sheetRequestToken) return; // navigated away meanwhile
+    const wrap = document.getElementById('sheetWrap');
+    if(!wrap) return;
+    if(!rec || !rec.blob){ wrap.innerHTML = '<div class="noLyrics">Não consegui carregar a partitura.</div>'; return; }
+    const url = URL.createObjectURL(rec.blob);
+    currentSheetBlobUrl = url;
+    if(rec.type==='pdf'){
+      wrap.innerHTML = `<iframe src="${url}" class="sheetFrame" title="Partitura"></iframe>`;
+    } else {
+      wrap.innerHTML = `<img src="${url}" class="sheetImg" alt="Partitura">`;
+    }
+  }catch(err){
+    if(myToken !== sheetRequestToken) return;
+    const wrap = document.getElementById('sheetWrap');
+    if(wrap) wrap.innerHTML = '<div class="noLyrics">Erro ao carregar a partitura.</div>';
   }
 }
 // Auto-shrinks the cifra block (never enlarges past the configured size) so the
