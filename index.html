@@ -74,7 +74,10 @@
   .row .meta{ color:var(--dim); font-size:13px; flex-shrink:0; text-align:right; }
   .row .actions{ display:flex; gap:4px; flex-shrink:0; }
   .row.selected{ background:var(--card); box-shadow:inset 3px 0 0 var(--accent); }
-  .dragHandle{ color:var(--dim); font-size:20px; padding:4px 6px; touch-action:none; cursor:grab; flex-shrink:0; }
+  .dragHandle{
+    color:var(--dim); font-size:22px; padding:8px 10px; touch-action:none; cursor:grab; flex-shrink:0;
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+  }
   .row.dragging{ opacity:0.55; box-shadow:0 4px 14px rgba(0,0,0,0.4); background:var(--card); }
   .row.dragging .dragHandle{ cursor:grabbing; }
   .checkCircle{
@@ -818,14 +821,21 @@ function attachDragHandlers(sl){
       try{ handle.setPointerCapture(e.pointerId); }catch(err){}
       row.classList.add('dragging');
       const onMove = (ev)=>{
-        const rows = [...container.querySelectorAll('.row')];
         const y = ev.clientY;
-        for(const r of rows){
-          if(r===row) continue;
+        const others = [...container.querySelectorAll('.row')].filter(r=>r!==row);
+        // Find the first row (in current DOM order) whose vertical midpoint is
+        // below the pointer, and place the dragged row right before it. If the
+        // pointer is below every row, move the dragged row to the very end.
+        let target = null;
+        for(const r of others){
           const rect = r.getBoundingClientRect();
           const mid = rect.top + rect.height/2;
-          if(y < mid && r.previousElementSibling===row){ container.insertBefore(row, r); break; }
-          if(y > mid && r.nextElementSibling===row){ container.insertBefore(row, r.nextElementSibling); break; }
+          if(y < mid){ target = r; break; }
+        }
+        if(target){
+          if(row.nextElementSibling !== target) container.insertBefore(row, target);
+        } else if(container.lastElementChild !== row){
+          container.appendChild(row);
         }
       };
       const onUp = ()=>{
