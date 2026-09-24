@@ -226,6 +226,20 @@
     .lyrbody .cifra-lines{ max-width:920px; }
     .stagelist{ max-width:820px; margin:0 auto; width:100%; }
   }
+
+  /* ---- Print (setlist listing only — Letra/Cifra/Partitura never print) ---- */
+  #printArea{ display:none; }
+  .printSong{ break-inside:avoid; margin-bottom:0.5em; }
+  .printTitleRow{ display:flex; align-items:baseline; gap:0.5em; }
+  .printIdx{ opacity:0.6; }
+  .printExtra{ font-size:0.82em; margin-top:0.1em; }
+  @media print{
+    body{ background:#fff !important; color:#000; }
+    #topbar, #syncBanner, #screen{ display:none !important; }
+    #printArea{ display:block !important; font-family:Arial,Helvetica,sans-serif; }
+    #printArea h1{ font-size:1.3em; margin:0 0 0.6em 0; }
+    .printCols{ column-gap:24px; }
+  }
 </style>
 </head>
 <body>
@@ -236,6 +250,8 @@
 </div>
 <div id="syncBanner"></div>
 <main id="screen"></main>
+<style id="printPageStyle"></style>
+<div id="printArea"></div>
 
 <script>
 /* ---------------- DATA LAYER ---------------- */
@@ -247,7 +263,8 @@ function defaultSettings(){
     theme:'dark',
     linesPerPage:3, fontSize:'md',
     chordFontSize:'md', chordFitPage:false,
-    stageFontSize:{ title:'md', list:'md', tone:'md', notes:'md' }
+    stageFontSize:{ title:'md', list:'md', tone:'md', notes:'md' },
+    print:{ columns:1, fontSize:13, textColor:'#000000', toneColor:'#000000', notesColor:'#555555', showExtra:true, orientation:'portrait' }
   };
 }
 function defaultDB(){
@@ -263,6 +280,7 @@ function loadDB(){
     const ds = defaultSettings();
     merged.settings = Object.assign({}, ds, parsed.settings||{});
     merged.settings.stageFontSize = Object.assign({}, ds.stageFontSize, (parsed.settings&&parsed.settings.stageFontSize)||{});
+    merged.settings.print = Object.assign({}, ds.print, (parsed.settings&&parsed.settings.print)||{});
     return merged;
   }catch(e){ return defaultDB(); }
 }
@@ -773,6 +791,7 @@ function renderSetlist(sl){
     <button class="btn" onclick="goTo('paste')">+ Colar do Spotify</button>
     <button class="btn" onclick="duplicateSetlist('${sl.id}')">⧉ Duplicar setlist</button>
     ${sl.songs.length ? `<button class="btn ${state.selectMode?'active':''}" onclick="toggleSelectMode()">${state.selectMode?'✕ Cancelar seleção':'☑ Selecionar'}</button>` : ''}
+    ${sl.songs.length ? `<button class="btn" onclick="openPrintOptions('${sl.id}')">🖨 Imprimir</button>` : ''}
   </div>`;
   if(sl.songs.length===0){
     html += `<div class="empty"><b>Setlist vazio</b>Adicione músicas manualmente ou cole uma lista copiada do Spotify.</div>`;
@@ -909,6 +928,118 @@ function copySelectedToNew(fromSlId){
   state.selectMode = false; state.selectedSongs = [];
   openSetlist(copy.id);
 }
+
+/* ---------------- PRINT (setlist listing only) ----------------
+   Uses the browser's own native print dialog (window.print()) — works the
+   same way on Windows, iOS, Android, Chrome, Safari, etc., no library needed.
+   Preferences are saved locally (like theme/font size) but never synced
+   between devices, same treatment as the other display-only settings.
+   Orientation/paper size are a starting suggestion: the OS print dialog
+   always lets the person override them, same as any website.
+*/
+function openPrintOptions(slId){
+  const p = db.settings.print;
+  const html = `<div class="overlay" onclick="if(event.target===this) closePrintOptions()">
+    <div class="sheet">
+      <h2>Opções de impressão</h2>
+      <div class="sheet-row"><span>Colunas</span>
+        <select id="pr_columns">
+          <option value="1" ${p.columns===1?'selected':''}>1 coluna</option>
+          <option value="2" ${p.columns===2?'selected':''}>2 colunas</option>
+          <option value="3" ${p.columns===3?'selected':''}>3 colunas</option>
+        </select>
+      </div>
+      <div class="sheet-row"><span>Orientação</span>
+        <select id="pr_orientation">
+          <option value="portrait" ${p.orientation==='portrait'?'selected':''}>A4 retrato</option>
+          <option value="landscape" ${p.orientation==='landscape'?'selected':''}>A4 paisagem</option>
+        </select>
+      </div>
+      <div class="sheet-row"><span>Tamanho da fonte</span>
+        <div class="stepper">
+          <button class="btn" onclick="stepPrintFontSize(-1)">A−</button>
+          <span id="pr_fontSizeLabel">${p.fontSize}px</span>
+          <button class="btn" onclick="stepPrintFontSize(1)">A+</button>
+        </div>
+      </div>
+      <div class="sheet-row"><span>Cor do texto</span><input type="color" id="pr_textColor" value="${p.textColor}"></div>
+      <div class="sheet-row"><span>Cor da tonalidade</span><input type="color" id="pr_toneColor" value="${p.toneColor}"></div>
+      <div class="sheet-row"><span>Cor do BPM/notas</span><input type="color" id="pr_notesColor" value="${p.notesColor}"></div>
+      <div class="sheet-row"><span>Imprimir BPM e notas do show</span>
+        <button class="btn ${p.showExtra?'active':''}" id="pr_showExtraBtn" onclick="togglePrintExtra()">${p.showExtra?'Sim':'Não'}</button>
+      </div>
+      <div class="hint">O tamanho do papel e a orientação são um ponto de partida — a caixa de impressão do seu sistema sempre permite trocar na hora, como em qualquer site.</div>
+      <div class="backupBtns" style="margin-top:14px;">
+        <button class="btn primary" onclick="doPrint('${slId}')">🖨 Imprimir</button>
+        <button class="btn" onclick="closePrintOptions()">Cancelar</button>
+      </div>
+    </div>
+  </div>`;
+  const wrap = document.createElement('div');
+  wrap.id = 'printOptionsOverlay';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+}
+function closePrintOptions(){ const el = document.getElementById('printOptionsOverlay'); if(el) el.remove(); }
+function stepPrintFontSize(d){
+  db.settings.print.fontSize = Math.max(9, Math.min(22, db.settings.print.fontSize + d));
+  saveDB();
+  const label = document.getElementById('pr_fontSizeLabel');
+  if(label) label.textContent = db.settings.print.fontSize+'px';
+}
+function togglePrintExtra(){
+  db.settings.print.showExtra = !db.settings.print.showExtra;
+  saveDB();
+  const btn = document.getElementById('pr_showExtraBtn');
+  if(btn){ btn.textContent = db.settings.print.showExtra?'Sim':'Não'; btn.classList.toggle('active', db.settings.print.showExtra); }
+}
+function doPrint(slId){
+  const sl = db.setlists.find(s=>s.id===slId);
+  if(!sl) return;
+  // read the remaining fields (color/select) that don't self-save on change
+  const p = db.settings.print;
+  p.columns = parseInt(document.getElementById('pr_columns').value, 10);
+  p.orientation = document.getElementById('pr_orientation').value;
+  p.textColor = document.getElementById('pr_textColor').value;
+  p.toneColor = document.getElementById('pr_toneColor').value;
+  p.notesColor = document.getElementById('pr_notesColor').value;
+  saveDB();
+  closePrintOptions();
+  buildPrintArea(sl, p);
+  const pageStyle = document.getElementById('printPageStyle');
+  if(pageStyle) pageStyle.textContent = `@page{ size:A4 ${p.orientation}; margin:14mm; }`;
+  setTimeout(()=>window.print(), 60);
+}
+function buildPrintArea(sl, p){
+  const el = document.getElementById('printArea');
+  if(!el) return;
+  const today = new Date().toLocaleDateString('pt-BR');
+  let songsHtml = '';
+  sl.songs.forEach((songId, i)=>{
+    const s = db.songs[songId]; if(!s) return;
+    const extra = [];
+    if(s.bpm) extra.push(esc(s.bpm)+' bpm');
+    if(s.notes) extra.push(esc(s.notes));
+    songsHtml += `<div class="printSong">
+      <div class="printTitleRow" style="color:${p.textColor}">
+        <span class="printIdx">${i+1}.</span>
+        <b>${esc(s.title)}</b>
+        ${s.artist?`<span style="opacity:0.75">— ${esc(s.artist)}</span>`:''}
+        ${s.tone?`<b style="color:${p.toneColor}">[${esc(s.tone)}]</b>`:''}
+      </div>
+      ${(p.showExtra && extra.length) ? `<div class="printExtra" style="color:${p.notesColor}">${extra.join(' · ')}</div>` : ''}
+    </div>`;
+  });
+  el.innerHTML = `
+    <h1>${esc(sl.name)}</h1>
+    <div style="font-size:0.75em; opacity:0.6; margin-bottom:1em;">${sl.songs.length} música${sl.songs.length!==1?'s':''} · impresso em ${today}</div>
+    <div class="printCols" style="column-count:${p.columns}; font-size:${p.fontSize}px;">${songsHtml}</div>
+  `;
+}
+window.addEventListener('afterprint', ()=>{
+  const el = document.getElementById('printArea');
+  if(el) el.innerHTML = '';
+});
 
 /* ---------------- SONG EDIT SCREEN ---------------- */
 function editSong(songId){
@@ -1467,6 +1598,7 @@ function importData(ev){
       db = Object.assign(defaultDB(), incoming);
       db.settings = Object.assign({}, ds, incoming.settings||{});
       db.settings.stageFontSize = Object.assign({}, ds.stageFontSize, (incoming.settings&&incoming.settings.stageFontSize)||{});
+      db.settings.print = Object.assign({}, ds.print, (incoming.settings&&incoming.settings.print)||{});
       // fill in any new song fields (align/cifra) missing from older backups —
       // build a fresh object per song, never merge a song into itself
       Object.keys(db.songs).forEach(sid=>{ db.songs[sid] = Object.assign(blankSong(), db.songs[sid]); });

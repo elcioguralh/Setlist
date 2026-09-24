@@ -202,6 +202,17 @@ Ao entrar no **Modo Palco**, o app agora tenta manter a tela ligada automaticame
 
 **Recomendação prática:** antes de um show importante, ainda vale a pena ajustar manualmente o tempo de bloqueio de tela do celular (deixar mais longo) como reforço, principalmente no iPhone — trate o Wake Lock automático como um "bônus" que funciona na maioria das vezes, não como garantia absoluta em todo aparelho/versão de iOS.
 
+### Imprimir o setlist
+Dentro de um setlist (com pelo menos uma música), toque em **"🖨 Imprimir"**. Abre uma tela de opções:
+- **Colunas:** 1, 2 ou 3 — a lista se distribui sozinha entre elas
+- **Orientação:** A4 retrato ou paisagem
+- **Tamanho da fonte, cor do texto, cor da tonalidade, cor do BPM/notas:** cada um ajustável separadamente
+- **Imprimir BPM e notas do show:** liga/desliga essa linha extra por música
+
+Ao tocar em **"🖨 Imprimir"** dentro dessa tela, abre a caixa de impressão nativa do seu sistema (a mesma de qualquer site — funciona igual no Windows, iOS, Android, Chrome, Safari). Lá você também pode trocar tamanho de papel/orientação se quiser, e usar **"Salvar como PDF"** pra gerar um PDF sem precisar de impressora.
+
+Só imprime a listagem (nome, artista, tom, BPM, notas) — não imprime letra, cifra ou partitura. Suas escolhas de estilo ficam salvas no aparelho pra próxima vez (não fazem parte da sincronização entre dispositivos, do mesmo jeito que tema e tamanho de fonte).
+
 ## Backup e transferência entre aparelhos
 
 Em Ajustes ⚙ → Backup → **Exportar**, gera um arquivo `.json` com todos os seus setlists e letras. Para levar para outro celular/tablet, use **Importar** com esse mesmo arquivo. Os dados ficam salvos localmente no navegador (não são enviados para nenhum servidor) — por isso o backup manual é recomendado antes de trocar de aparelho, limpar o navegador, ou reinstalar.
