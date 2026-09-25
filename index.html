@@ -233,12 +233,14 @@
   .printTitleRow{ display:flex; align-items:baseline; gap:0.5em; }
   .printIdx{ opacity:0.6; }
   .printExtra{ font-size:0.82em; margin-top:0.1em; }
+  .printFooter{ margin-top:2em; font-size:0.7em; opacity:0.55; text-align:center; }
   @media print{
     body{ background:#fff !important; color:#000; }
     #topbar, #syncBanner, #screen{ display:none !important; }
     #printArea{ display:block !important; font-family:Arial,Helvetica,sans-serif; }
     #printArea h1{ font-size:1.3em; margin:0 0 0.6em 0; }
     .printCols{ column-gap:24px; }
+    .printFooter{ position:fixed; left:0; right:0; bottom:6mm; font-size:9px; }
   }
 </style>
 </head>
@@ -1034,6 +1036,7 @@ function buildPrintArea(sl, p){
     <h1>${esc(sl.name)}</h1>
     <div style="font-size:0.75em; opacity:0.6; margin-bottom:1em;">${sl.songs.length} música${sl.songs.length!==1?'s':''} · impresso em ${today}</div>
     <div class="printCols" style="column-count:${p.columns}; font-size:${p.fontSize}px;">${songsHtml}</div>
+    <div class="printFooter">Elcio Guralh Marketing de Performance e Soluções | +55 42 98831-1591 | Instagram @elcioguralh</div>
   `;
 }
 window.addEventListener('afterprint', ()=>{
@@ -1535,6 +1538,16 @@ function openSettings(){
           <span class="kbd">↑</span> <span class="kbd">←</span> <span class="kbd">Page Up</span> — anterior<br><br>
           <span class="kbd">Enter</span> <span class="kbd">Espaço</span> — abrir letra / avançar trecho<br><br>
           <span class="kbd">Esc</span> <span class="kbd">Backspace</span> — voltar
+        </div>
+      </div>
+
+      <div class="sheet-row" style="flex-direction:column; align-items:flex-start; gap:4px;">
+        <span style="font-weight:600;">Sobre</span>
+        <div class="hint" style="margin:0; line-height:1.6;">
+          Setlist Palco — Beta 2.0<br>
+          Produzido por: Elcio Guralh Marketing de Performance e Soluções<br>
+          Instagram @elcioguralh<br>
+          Direitos de distribuição protegidos.
         </div>
       </div>
       <div style="padding-top:10px;"><button class="btn" style="width:100%" onclick="closeSettings()">Fechar</button></div>
