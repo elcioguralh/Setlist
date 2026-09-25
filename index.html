@@ -233,14 +233,12 @@
   .printTitleRow{ display:flex; align-items:baseline; gap:0.5em; }
   .printIdx{ opacity:0.6; }
   .printExtra{ font-size:0.82em; margin-top:0.1em; }
-  .printFooter{ margin-top:2em; font-size:0.7em; opacity:0.55; text-align:center; }
   @media print{
     body{ background:#fff !important; color:#000; }
     #topbar, #syncBanner, #screen{ display:none !important; }
     #printArea{ display:block !important; font-family:Arial,Helvetica,sans-serif; }
     #printArea h1{ font-size:1.3em; margin:0 0 0.6em 0; }
     .printCols{ column-gap:24px; }
-    .printFooter{ position:fixed; left:0; right:0; bottom:6mm; font-size:9px; }
   }
 </style>
 </head>
@@ -1036,7 +1034,6 @@ function buildPrintArea(sl, p){
     <h1>${esc(sl.name)}</h1>
     <div style="font-size:0.75em; opacity:0.6; margin-bottom:1em;">${sl.songs.length} música${sl.songs.length!==1?'s':''} · impresso em ${today}</div>
     <div class="printCols" style="column-count:${p.columns}; font-size:${p.fontSize}px;">${songsHtml}</div>
-    <div class="printFooter">Elcio Guralh Marketing de Performance e Soluções | +55 42 98831-1591 | Instagram @elcioguralh</div>
   `;
 }
 window.addEventListener('afterprint', ()=>{
